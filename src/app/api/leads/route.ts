@@ -279,7 +279,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       ...lead,
-      tags: lead.tags.map((lt) => lt.tag),
+      tags: lead.tags.map((lt: { tag: unknown }) => lt.tag),
     })
   } catch (error) {
     console.error('Create lead error:', error)
