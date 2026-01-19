@@ -1,0 +1,234 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 240 10% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 3.9%;
+    --primary: 205 90% 48%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 240 4.8% 95.9%;
+    --secondary-foreground: 240 5.9% 10%;
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 46.1%;
+    --accent: 240 4.8% 95.9%;
+    --accent-foreground: 240 5.9% 10%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 5.9% 90%;
+    --input: 240 5.9% 90%;
+    --ring: 205 90% 48%;
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    --background: 240 10% 3.9%;
+    --foreground: 0 0% 98%;
+    --card: 240 10% 6%;
+    --card-foreground: 0 0% 98%;
+    --popover: 240 10% 6%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 205 90% 48%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
+    --accent: 240 3.7% 15.9%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 3.7% 15.9%;
+    --input: 240 3.7% 15.9%;
+    --ring: 205 90% 48%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  
+  body {
+    @apply bg-dark-bg text-dark-text antialiased;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-dark-bg;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-dark-border rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-dark-muted;
+  }
+}
+
+@layer components {
+  /* Glass effect */
+  .glass {
+    @apply bg-dark-card/80 backdrop-blur-xl border border-dark-border/50;
+  }
+
+  .glass-hover {
+    @apply hover:bg-dark-hover/80 transition-colors duration-200;
+  }
+
+  /* Glow effects */
+  .glow-brand {
+    box-shadow: 0 0 60px -15px rgba(12, 140, 233, 0.4);
+  }
+
+  .glow-success {
+    box-shadow: 0 0 60px -15px rgba(16, 185, 129, 0.4);
+  }
+
+  /* Card styles */
+  .card {
+    @apply glass rounded-xl p-4 shadow-glass;
+  }
+
+  .card-interactive {
+    @apply card glass-hover cursor-pointer;
+  }
+
+  /* Button base styles */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:ring-offset-2 focus:ring-offset-dark-bg disabled:opacity-50 disabled:pointer-events-none;
+  }
+
+  .btn-primary {
+    @apply btn bg-brand-500 text-white hover:bg-brand-600 shadow-glow-brand;
+  }
+
+  .btn-secondary {
+    @apply btn bg-dark-hover text-dark-text hover:bg-dark-border;
+  }
+
+  .btn-ghost {
+    @apply btn bg-transparent text-dark-muted hover:text-dark-text hover:bg-dark-hover;
+  }
+
+  .btn-danger {
+    @apply btn bg-danger text-white hover:bg-danger-dark;
+  }
+
+  /* Input styles */
+  .input {
+    @apply w-full rounded-lg border border-dark-border bg-dark-card px-4 py-2.5 text-dark-text placeholder:text-dark-muted focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 transition-all duration-200;
+  }
+
+  .input-error {
+    @apply input border-danger focus:border-danger focus:ring-danger/20;
+  }
+
+  /* Badge styles */
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
+
+  .badge-brand {
+    @apply badge bg-brand-500/20 text-brand-400;
+  }
+
+  .badge-success {
+    @apply badge bg-success/20 text-success;
+  }
+
+  .badge-warning {
+    @apply badge bg-warning/20 text-warning;
+  }
+
+  .badge-danger {
+    @apply badge bg-danger/20 text-danger;
+  }
+
+  .badge-neutral {
+    @apply badge bg-dark-border text-dark-muted;
+  }
+
+  /* Skeleton loader */
+  .skeleton {
+    @apply animate-pulse bg-dark-hover rounded;
+  }
+
+  /* Score indicator */
+  .score-indicator {
+    @apply relative w-12 h-12 rounded-full flex items-center justify-center text-sm font-bold;
+  }
+
+  .score-high {
+    @apply bg-success/20 text-success ring-2 ring-success/30;
+  }
+
+  .score-medium {
+    @apply bg-warning/20 text-warning ring-2 ring-warning/30;
+  }
+
+  .score-low {
+    @apply bg-danger/20 text-danger ring-2 ring-danger/30;
+  }
+
+  /* Probability bar */
+  .probability-bar {
+    @apply h-2 rounded-full bg-dark-border overflow-hidden;
+  }
+
+  .probability-fill {
+    @apply h-full rounded-full transition-all duration-500;
+  }
+
+  /* Command palette overlay */
+  .command-overlay {
+    @apply fixed inset-0 bg-black/60 backdrop-blur-sm z-50;
+  }
+
+  .command-dialog {
+    @apply fixed top-[20%] left-1/2 -translate-x-1/2 w-full max-w-2xl glass rounded-2xl shadow-2xl overflow-hidden z-50;
+  }
+}
+
+@layer utilities {
+  /* Text gradient */
+  .text-gradient {
+    @apply bg-gradient-to-r from-brand-400 to-brand-600 bg-clip-text text-transparent;
+  }
+
+  /* Hide scrollbar */
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  /* Truncate multiline */
+  .line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .line-clamp-3 {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+}
