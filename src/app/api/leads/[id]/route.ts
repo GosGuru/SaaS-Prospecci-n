@@ -287,7 +287,7 @@ export async function PATCH(
 
     return NextResponse.json({
       ...lead,
-      tags: lead.tags.map((lt) => lt.tag),
+      tags: lead.tags.map((lt: { tag: unknown }) => lt.tag),
     })
   } catch (error) {
     console.error('Update lead error:', error)
