@@ -8,15 +8,12 @@ const globalForPrisma = globalThis as unknown as {
 function createPrismaClient() {
   const databaseUrl = process.env.DATABASE_URL
   
-  // If no DATABASE_URL, create a basic client (for build time)
-  // It won't connect but allows type checking to pass
-  if (!databaseUrl) {
-    return new PrismaClient()
-  }
+  // For build time without DATABASE_URL, use a dummy accelerate URL
+  // This allows the build to pass - actual connections require real URL at runtime
+  const accelerateUrl = databaseUrl || 'prisma://accelerate.prisma-data.net/?api_key=dummy_build_key'
   
-  // With DATABASE_URL, use Accelerate
   return new PrismaClient({
-    accelerateUrl: databaseUrl,
+    accelerateUrl,
   }).$extends(withAccelerate()) as unknown as PrismaClient
 }
 
