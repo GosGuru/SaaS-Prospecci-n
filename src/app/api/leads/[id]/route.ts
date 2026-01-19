@@ -6,16 +6,17 @@ import { calculateWebProbability } from '@/lib/scoring'
 // GET /api/leads/[id]
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const session = await auth()
     if (!session?.user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const lead = await prisma.lead.findUnique({
-      where: { id: params.id },
+      where: { id },
       include: {
         tags: {
           include: {
@@ -146,9 +147,10 @@ export async function GET(
 // PATCH /api/leads/[id]
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const session = await auth()
     if (!session?.user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -174,7 +176,7 @@ export async function PATCH(
 
     // Get current lead
     const currentLead = await prisma.lead.findUnique({
-      where: { id: params.id },
+      where: { id },
       include: {
         stage: true,
       },
@@ -202,7 +204,7 @@ export async function PATCH(
     if (stageId && stageId !== currentLead.stageId) {
       await prisma.leadStageHistory.create({
         data: {
-          leadId: params.id,
+          leadId: id,
           fromStageId: currentLead.stageId,
           toStageId: stageId,
         },
@@ -222,7 +224,7 @@ export async function PATCH(
             fromStageId: currentLead.stageId,
             toStageId: stageId,
           },
-          leadId: params.id,
+          leadId: id,
           userId: session.user.id,
         },
       })
@@ -232,14 +234,14 @@ export async function PATCH(
     if (tagIds !== undefined) {
       // Remove existing tags
       await prisma.leadTag.deleteMany({
-        where: { leadId: params.id },
+        where: { leadId: id },
       })
 
       // Add new tags
       if (tagIds.length > 0) {
         await prisma.leadTag.createMany({
           data: tagIds.map((tagId: string) => ({
-            leadId: params.id,
+            leadId: id,
             tagId,
           })),
         })
@@ -248,7 +250,7 @@ export async function PATCH(
 
     // Update lead
     const lead = await prisma.lead.update({
-      where: { id: params.id },
+      where: { id },
       data: {
         name,
         email,
@@ -299,16 +301,17 @@ export async function PATCH(
 // DELETE /api/leads/[id]
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id: leadId } = await params
     const session = await auth()
     if (!session?.user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const lead = await prisma.lead.findUnique({
-      where: { id: params.id },
+      where: { id: leadId },
     })
 
     if (!lead) {
@@ -330,7 +333,7 @@ export async function DELETE(
     }
 
     await prisma.lead.delete({
-      where: { id: params.id },
+      where: { id: leadId },
     })
 
     return NextResponse.json({ success: true })
