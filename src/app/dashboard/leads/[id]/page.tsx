@@ -113,6 +113,9 @@ type MessageChannel = 'whatsapp' | 'email'
 interface LeadWithDetails extends Lead {
   activities?: Activity[]
   stages?: PipelineStage[]
+  opportunityType?: 'new_website' | 'redesign' | 'low_priority'
+  redesignPotential?: number
+  redesignReason?: string
 }
 
 export default function LeadDetailPage() {
@@ -400,22 +403,22 @@ export default function LeadDetailPage() {
             </div>
             
             {/* Redesign potential bar for websites */}
-            {leadData?.hasWebsite && leadData?.redesignPotential > 0 && (
+            {leadData?.hasWebsite && (leadData?.redesignPotential ?? 0) > 0 && (
               <div className="mt-4 pt-4 border-t border-dark-border">
                 <div className="flex justify-between text-xs text-dark-muted mb-2">
                   <span>Potencial de rediseño</span>
-                  <span className={leadData.redesignPotential >= 70 ? 'text-amber-400' : leadData.redesignPotential >= 50 ? 'text-yellow-400' : 'text-dark-muted'}>
-                    {leadData.redesignPotential}%
+                  <span className={(leadData.redesignPotential ?? 0) >= 70 ? 'text-amber-400' : (leadData.redesignPotential ?? 0) >= 50 ? 'text-yellow-400' : 'text-dark-muted'}>
+                    {leadData.redesignPotential ?? 0}%
                   </span>
                 </div>
                 <div className="h-2 bg-dark-hover rounded-full overflow-hidden">
                   <div 
                     className={`h-full rounded-full transition-all ${
-                      leadData.redesignPotential >= 70 ? 'bg-amber-500' : 
-                      leadData.redesignPotential >= 50 ? 'bg-yellow-500' : 
+                      (leadData.redesignPotential ?? 0) >= 70 ? 'bg-amber-500' : 
+                      (leadData.redesignPotential ?? 0) >= 50 ? 'bg-yellow-500' : 
                       'bg-gray-500'
                     }`}
-                    style={{ width: `${leadData.redesignPotential}%` }}
+                    style={{ width: `${leadData.redesignPotential ?? 0}%` }}
                   />
                 </div>
               </div>

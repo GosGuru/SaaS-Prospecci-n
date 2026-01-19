@@ -434,7 +434,7 @@ function PipelineSettings() {
       id: Date.now().toString(),
       name: newStageName,
       color: newStageColor,
-      position: stages.length,
+      order: stages.length,
       workspaceId: 'demo',
     }
 

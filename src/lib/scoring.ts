@@ -121,7 +121,7 @@ export function calculateWebProbability(business: BusinessData): ScoreBreakdown 
 
   // Factor 1: No tiene website (máximo impacto: +40 puntos)
   // Si YA tiene website, el score máximo es muy bajo (solo potencial rediseño)
-  const hasWebsite = business.hasWebsite || (business.website && business.website.length > 0)
+  const hasWebsite = Boolean(business.hasWebsite || (business.website && business.website.length > 0))
   
   if (!hasWebsite) {
     const noWebsiteScore = 40

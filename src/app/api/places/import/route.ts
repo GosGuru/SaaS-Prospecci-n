@@ -23,7 +23,7 @@ async function getOrCreateWorkspace(userId: string, userEmail: string) {
       members: {
         create: {
           userId,
-          role: 'OWNER',
+          role: 'ADMIN',
         },
       },
       // Create default pipeline stages

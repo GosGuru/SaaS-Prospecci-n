@@ -127,9 +127,9 @@ export async function GET(
     return NextResponse.json({
       ...lead,
       webProbability: scoring.total,
-      tags: lead.tags.map((lt) => lt.tag),
+      tags: (lead as any).tags?.map((lt: { tag: unknown }) => lt.tag) || [],
       hasWebsite,
-      stages: lead.workspace.pipelineStages,
+      stages: (lead as any).workspace?.pipelineStages || [],
       // Opportunity info
       opportunityType: scoring.opportunityType,
       redesignPotential: scoring.redesignPotential,

@@ -43,7 +43,7 @@ export function WebProbabilityBadge({
     ? {
         initial: { scale: 0.5, opacity: 0 },
         animate: { scale: 1, opacity: 1 },
-        transition: { type: 'spring', stiffness: 200, damping: 15 },
+        transition: { type: 'spring' as const, stiffness: 200, damping: 15 },
       }
     : {}
 

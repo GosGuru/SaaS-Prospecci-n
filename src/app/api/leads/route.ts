@@ -123,9 +123,9 @@ export async function GET(req: NextRequest) {
     ])
 
     // Transform the data
-    const transformedLeads = leads.map((lead) => ({
+    const transformedLeads = leads.map((lead: any) => ({
       ...lead,
-      tags: lead.tags.map((lt) => lt.tag),
+      tags: lead.tags?.map((lt: { tag: unknown }) => lt.tag) || [],
       hasWebsite: !!lead.website,
     }))
 
