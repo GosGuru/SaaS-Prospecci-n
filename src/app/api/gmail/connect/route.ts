@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { google } from 'googleapis'
+import { getBaseUrl } from '@/lib/url'
 
 // GET /api/gmail/connect - Start Gmail OAuth flow
 export async function GET(req: NextRequest) {
@@ -13,7 +14,7 @@ export async function GET(req: NextRequest) {
     const oauth2Client = new google.auth.OAuth2(
       process.env.GOOGLE_CLIENT_ID,
       process.env.GOOGLE_CLIENT_SECRET,
-      `${process.env.NEXTAUTH_URL}/api/gmail/callback`
+      `${getBaseUrl()}/api/gmail/callback`
     )
 
     const scopes = [

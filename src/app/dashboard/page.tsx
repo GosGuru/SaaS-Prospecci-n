@@ -19,96 +19,57 @@ import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn, formatRelativeTime } from '@/lib/utils'
 
-// Demo data
-const DEMO_METRICS = {
-  totalLeads: 147,
-  newLeadsToday: 12,
-  contactedToday: 8,
-  wonThisMonth: 23,
-  lostThisMonth: 7,
-  leadsByStage: [
-    { stage: 'Nuevo', count: 34, color: '#6366f1' },
-    { stage: 'Contactado', count: 28, color: '#0ea5e9' },
-    { stage: 'Calificado', count: 19, color: '#8b5cf6' },
-    { stage: 'Reunión', count: 15, color: '#f59e0b' },
-    { stage: 'Propuesta', count: 11, color: '#ec4899' },
-    { stage: 'Ganado', count: 23, color: '#10b981' },
-    { stage: 'Perdido', count: 17, color: '#ef4444' },
-  ],
+// Types
+interface DashboardMetrics {
+  totalLeads: number
+  leadGrowth: { value: number; label: string }
+  newLeadsToday: number
+  newLeadsGrowth: { value: number; label: string }
+  contactedToday: number
+  wonThisMonth: number
+  lostThisMonth: number
+  leadsByStage: Array<{ stage: string; count: number; color: string }>
   outreachStats: {
-    whatsappSent: 156,
-    whatsappDelivered: 148,
-    whatsappFailed: 8,
-    emailSent: 89,
-    emailDelivered: 85,
-    emailFailed: 4,
-  },
+    whatsappSent: number
+    whatsappDelivered: number
+    whatsappFailed: number
+    emailSent: number
+    emailDelivered: number
+    emailFailed: number
+  }
 }
 
-const DEMO_ACTIVITIES = [
-  {
-    id: '1',
-    type: 'WHATSAPP',
-    title: 'WhatsApp enviado',
-    description: 'Mensaje de presentación a Restaurante El Buen Sabor',
-    leadName: 'Restaurante El Buen Sabor',
-    createdAt: new Date(Date.now() - 1000 * 60 * 15),
-  },
-  {
-    id: '2',
-    type: 'STAGE_CHANGE',
-    title: 'Cambio de etapa',
-    description: 'Peluquería Estilo movido a Propuesta',
-    leadName: 'Peluquería Estilo & Belleza',
-    createdAt: new Date(Date.now() - 1000 * 60 * 45),
-  },
-  {
-    id: '3',
-    type: 'EMAIL',
-    title: 'Email enviado',
-    description: 'Propuesta comercial enviada a Gimnasio Power',
-    leadName: 'Gimnasio Power Fitness',
-    createdAt: new Date(Date.now() - 1000 * 60 * 120),
-  },
-  {
-    id: '4',
-    type: 'NOTE',
-    title: 'Nota agregada',
-    description: 'Cliente interesado en landing page + SEO',
-    leadName: 'Clínica Dental Sonrisa',
-    createdAt: new Date(Date.now() - 1000 * 60 * 180),
-  },
-]
+interface Activity {
+  id: string
+  type: string
+  title: string
+  description: string
+  leadName: string
+  createdAt: string
+  userName?: string
+}
 
-const DEMO_TASKS = [
-  {
-    id: '1',
-    title: 'Llamar a Restaurante El Buen Sabor',
-    dueDate: new Date(Date.now() + 1000 * 60 * 60 * 2),
-    priority: 'HIGH',
-    leadName: 'Restaurante El Buen Sabor',
-  },
-  {
-    id: '2',
-    title: 'Enviar propuesta a Peluquería Estilo',
-    dueDate: new Date(Date.now() + 1000 * 60 * 60 * 24),
-    priority: 'MEDIUM',
-    leadName: 'Peluquería Estilo & Belleza',
-  },
-  {
-    id: '3',
-    title: 'Seguimiento WhatsApp - Gimnasio Power',
-    dueDate: new Date(Date.now() + 1000 * 60 * 60 * 48),
-    priority: 'LOW',
-    leadName: 'Gimnasio Power Fitness',
-  },
-]
+interface Task {
+  id: string
+  title: string
+  description: string
+  dueDate: string | null
+  priority: string
+  status: string
+  leadName: string | null
+  assigneeName: string | null
+}
+
 
 const activityIcons: Record<string, any> = {
   WHATSAPP: MessageSquare,
   EMAIL: Mail,
+  CALL: Users,
+  MEETING: Users,
   STAGE_CHANGE: Target,
   NOTE: Clock,
+  TASK_COMPLETED: CheckCircle,
+  SYSTEM: Clock,
 }
 
 const priorityColors: Record<string, string> = {
@@ -118,17 +79,78 @@ const priorityColors: Record<string, string> = {
   URGENT: 'bg-red-600/30 text-red-300',
 }
 
+const priorityLabels: Record<string, string> = {
+  LOW: 'Baja',
+  MEDIUM: 'Media',
+  HIGH: 'Alta',
+  URGENT: 'Urgente',
+}
+
 export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true)
-  const [metrics, setMetrics] = useState(DEMO_METRICS)
+  const [metrics, setMetrics] = useState<DashboardMetrics | null>(null)
+  const [activities, setActivities] = useState<Activity[]>([])
+  const [tasks, setTasks] = useState<Task[]>([])
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    // Simulate loading
-    const timer = setTimeout(() => setIsLoading(false), 1000)
-    return () => clearTimeout(timer)
+    async function fetchDashboardData() {
+      try {
+        setIsLoading(true)
+        
+        // Fetch all data in parallel
+        const [metricsRes, activitiesRes, tasksRes] = await Promise.all([
+          fetch('/api/dashboard/stats'),
+          fetch('/api/dashboard/activities'),
+          fetch('/api/dashboard/tasks'),
+        ])
+
+        if (!metricsRes.ok || !activitiesRes.ok || !tasksRes.ok) {
+          throw new Error('Error al cargar datos del dashboard')
+        }
+
+        const [metricsData, activitiesData, tasksData] = await Promise.all([
+          metricsRes.json(),
+          activitiesRes.json(),
+          tasksRes.json(),
+        ])
+
+        setMetrics(metricsData)
+        setActivities(activitiesData)
+        setTasks(tasksData)
+      } catch (err) {
+        console.error('Error fetching dashboard data:', err)
+        setError('Error al cargar el dashboard. Por favor, intenta de nuevo.')
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchDashboardData()
   }, [])
 
+
   if (isLoading) {
+    return <DashboardSkeleton />
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <p className="text-red-400 mb-2">{error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="text-brand-400 hover:text-brand-300"
+          >
+            Reintentar
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  if (!metrics) {
     return <DashboardSkeleton />
   }
 
@@ -140,9 +162,6 @@ export default function DashboardPage() {
           <h1 className="text-2xl font-bold text-dark-text">Dashboard</h1>
           <p className="text-dark-muted mt-1">Resumen de tu actividad comercial</p>
         </div>
-        <Badge variant="brand" dot>
-          Modo Demo Activo
-        </Badge>
       </div>
 
       {/* Stats Grid */}
@@ -150,15 +169,15 @@ export default function DashboardPage() {
         <StatCard
           title="Total Leads"
           value={metrics.totalLeads}
-          change={{ value: 12, label: 'vs mes anterior' }}
-          trend="up"
+          change={metrics.leadGrowth}
+          trend={metrics.leadGrowth.value >= 0 ? 'up' : 'down'}
           icon={<Users className="w-5 h-5" />}
         />
         <StatCard
           title="Nuevos Hoy"
           value={metrics.newLeadsToday}
-          change={{ value: 5, label: 'vs ayer' }}
-          trend="up"
+          change={metrics.newLeadsGrowth}
+          trend={metrics.newLeadsGrowth.value >= 0 ? 'up' : 'down'}
           icon={<UserPlus className="w-5 h-5" />}
         />
         <StatCard
@@ -178,30 +197,36 @@ export default function DashboardPage() {
         {/* Pipeline */}
         <Card className="p-6">
           <h2 className="text-lg font-semibold text-dark-text mb-4">Pipeline</h2>
-          <div className="space-y-3">
-            {metrics.leadsByStage.map((stage) => {
-              const maxCount = Math.max(...metrics.leadsByStage.map((s) => s.count))
-              const percentage = (stage.count / maxCount) * 100
+          {metrics.leadsByStage.length > 0 ? (
+            <div className="space-y-3">
+              {metrics.leadsByStage.map((stage) => {
+                const maxCount = Math.max(...metrics.leadsByStage.map((s) => s.count))
+                const percentage = maxCount > 0 ? (stage.count / maxCount) * 100 : 0
 
-              return (
-                <div key={stage.stage} className="flex items-center gap-3">
-                  <span className="w-24 text-sm text-dark-muted">{stage.stage}</span>
-                  <div className="flex-1 h-6 rounded-full bg-dark-border overflow-hidden">
-                    <motion.div
-                      initial={{ width: 0 }}
-                      animate={{ width: `${percentage}%` }}
-                      transition={{ duration: 0.8, ease: 'easeOut' }}
-                      className="h-full rounded-full"
-                      style={{ backgroundColor: stage.color }}
-                    />
+                return (
+                  <div key={stage.stage} className="flex items-center gap-3">
+                    <span className="w-24 text-sm text-dark-muted">{stage.stage}</span>
+                    <div className="flex-1 h-6 rounded-full bg-dark-border overflow-hidden">
+                      <motion.div
+                        initial={{ width: 0 }}
+                        animate={{ width: `${percentage}%` }}
+                        transition={{ duration: 0.8, ease: 'easeOut' }}
+                        className="h-full rounded-full"
+                        style={{ backgroundColor: stage.color }}
+                      />
+                    </div>
+                    <span className="w-8 text-sm font-medium text-dark-text text-right">
+                      {stage.count}
+                    </span>
                   </div>
-                  <span className="w-8 text-sm font-medium text-dark-text text-right">
-                    {stage.count}
-                  </span>
-                </div>
-              )
-            })}
-          </div>
+                )
+              })}
+            </div>
+          ) : (
+            <p className="text-sm text-dark-muted text-center py-8">
+              No hay etapas configuradas
+            </p>
+          )}
         </Card>
 
         {/* Outreach Stats */}
@@ -228,6 +253,9 @@ export default function DashboardPage() {
                   <span className="text-red-400">{metrics.outreachStats.whatsappFailed}</span>
                 </div>
               </div>
+              {metrics.outreachStats.whatsappSent === 0 && (
+                <p className="text-xs text-dark-muted mt-2 italic">Pendiente de configuración</p>
+              )}
             </div>
 
             {/* Email */}
@@ -260,59 +288,74 @@ export default function DashboardPage() {
         {/* Recent Activity */}
         <Card className="p-6">
           <h2 className="text-lg font-semibold text-dark-text mb-4">Actividad Reciente</h2>
-          <div className="space-y-4">
-            {DEMO_ACTIVITIES.map((activity) => {
-              const Icon = activityIcons[activity.type] || Clock
-              return (
-                <div key={activity.id} className="flex items-start gap-3">
-                  <div className="p-2 rounded-lg bg-dark-hover">
-                    <Icon className="w-4 h-4 text-brand-400" />
+          {activities.length > 0 ? (
+            <div className="space-y-4">
+              {activities.map((activity) => {
+                const Icon = activityIcons[activity.type] || Clock
+                return (
+                  <div key={activity.id} className="flex items-start gap-3">
+                    <div className="p-2 rounded-lg bg-dark-hover">
+                      <Icon className="w-4 h-4 text-brand-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-dark-text">{activity.title}</p>
+                      <p className="text-xs text-dark-muted truncate">{activity.description}</p>
+                    </div>
+                    <span className="text-xs text-dark-muted whitespace-nowrap">
+                      {formatRelativeTime(new Date(activity.createdAt))}
+                    </span>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-dark-text">{activity.title}</p>
-                    <p className="text-xs text-dark-muted truncate">{activity.description}</p>
-                  </div>
-                  <span className="text-xs text-dark-muted whitespace-nowrap">
-                    {formatRelativeTime(activity.createdAt)}
-                  </span>
-                </div>
-              )
-            })}
-          </div>
+                )
+              })}
+            </div>
+          ) : (
+            <p className="text-sm text-dark-muted text-center py-8">
+              No hay actividad reciente
+            </p>
+          )}
         </Card>
 
         {/* Upcoming Tasks */}
         <Card className="p-6">
           <h2 className="text-lg font-semibold text-dark-text mb-4">Tareas Pendientes</h2>
-          <div className="space-y-3">
-            {DEMO_TASKS.map((task) => (
-              <div
-                key={task.id}
-                className="flex items-center gap-3 p-3 rounded-lg bg-dark-hover"
-              >
+          {tasks.length > 0 ? (
+            <div className="space-y-3">
+              {tasks.map((task) => (
                 <div
-                  className={cn(
-                    'w-2 h-2 rounded-full',
-                    task.priority === 'HIGH' && 'bg-red-400',
-                    task.priority === 'MEDIUM' && 'bg-amber-400',
-                    task.priority === 'LOW' && 'bg-dark-muted'
-                  )}
-                />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-dark-text truncate">{task.title}</p>
-                  <p className="text-xs text-dark-muted">{task.leadName}</p>
-                </div>
-                <span
-                  className={cn(
-                    'text-xs px-2 py-1 rounded-full',
-                    priorityColors[task.priority]
-                  )}
+                  key={task.id}
+                  className="flex items-center gap-3 p-3 rounded-lg bg-dark-hover"
                 >
-                  {task.priority === 'HIGH' ? 'Alta' : task.priority === 'MEDIUM' ? 'Media' : 'Baja'}
-                </span>
-              </div>
-            ))}
-          </div>
+                  <div
+                    className={cn(
+                      'w-2 h-2 rounded-full',
+                      task.priority === 'HIGH' && 'bg-red-400',
+                      task.priority === 'URGENT' && 'bg-red-500',
+                      task.priority === 'MEDIUM' && 'bg-amber-400',
+                      task.priority === 'LOW' && 'bg-dark-muted'
+                    )}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-dark-text truncate">{task.title}</p>
+                    {task.leadName && (
+                      <p className="text-xs text-dark-muted">{task.leadName}</p>
+                    )}
+                  </div>
+                  <span
+                    className={cn(
+                      'text-xs px-2 py-1 rounded-full',
+                      priorityColors[task.priority]
+                    )}
+                  >
+                    {priorityLabels[task.priority] || task.priority}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-dark-muted text-center py-8">
+              No hay tareas pendientes
+            </p>
+          )}
         </Card>
       </div>
     </div>

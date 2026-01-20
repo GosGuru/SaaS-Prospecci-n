@@ -27,6 +27,7 @@ export async function GET(req: NextRequest) {
     const source = searchParams.get('source')
     const ownerId = searchParams.get('ownerId')
     const hasWebsite = searchParams.get('hasWebsite')
+    const lowProbability = searchParams.get('lowProbability')
     const minScore = searchParams.get('minScore')
     const page = parseInt(searchParams.get('page') || '1')
     const limit = parseInt(searchParams.get('limit') || '50')
@@ -77,6 +78,10 @@ export async function GET(req: NextRequest) {
       } else if (hasWebsite === 'false') {
         where.website = null
       }
+    }
+
+    if (lowProbability === 'true') {
+      where.webProbability = { lt: 40 }
     }
 
     if (minScore) {
@@ -287,5 +292,39 @@ export async function POST(req: NextRequest) {
       { error: 'Internal server error' },
       { status: 500 }
     )
+  }
+}
+
+// DELETE /api/leads - Bulk delete leads
+export async function DELETE(req: NextRequest) {
+  try {
+    const session = await auth()
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const body = await req.json()
+    const ids = Array.isArray(body?.ids) ? body.ids : []
+
+    if (ids.length === 0) {
+      return NextResponse.json({ error: 'No lead ids provided' }, { status: 400 })
+    }
+
+    const workspace = await getUserWorkspace(session.user.id)
+    if (!workspace) {
+      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+    }
+
+    const result = await prisma.lead.deleteMany({
+      where: {
+        id: { in: ids },
+        workspaceId: workspace.id,
+      },
+    })
+
+    return NextResponse.json({ deleted: result.count })
+  } catch (error) {
+    console.error('Bulk delete leads error:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

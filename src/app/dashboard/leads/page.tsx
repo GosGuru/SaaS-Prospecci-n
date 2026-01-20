@@ -1,8 +1,9 @@
 'use client'
 
 import { useState, useMemo } from 'react'
+import { useEffect } from 'react'
 import { motion, AnimatePresence, Reorder } from 'framer-motion'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Users,
   Search,
@@ -20,6 +21,7 @@ import {
   Calendar,
   Tag,
   ArrowUpRight,
+  Trash2,
 } from 'lucide-react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
@@ -151,8 +153,11 @@ export default function LeadsPage() {
     stage: '',
     source: '',
     hasWebsite: null as boolean | null,
+    lowProbability: false,
   })
   const [showFilters, setShowFilters] = useState(false)
+  const [selectedLeadIds, setSelectedLeadIds] = useState<Set<string>>(new Set())
+  const queryClient = useQueryClient()
 
   // Fetch leads from API
   const { data, isLoading } = useQuery({
@@ -163,12 +168,32 @@ export default function LeadsPage() {
       if (filters.stage) params.set('stageId', filters.stage)
       if (filters.source) params.set('source', filters.source)
       if (filters.hasWebsite !== null) params.set('hasWebsite', String(filters.hasWebsite))
+      if (filters.lowProbability) params.set('lowProbability', 'true')
       
       const response = await fetch(`/api/leads?${params.toString()}`)
       if (!response.ok) throw new Error('Error fetching leads')
       return response.json()
     },
     staleTime: 1000 * 30, // 30 seconds
+  })
+
+  const deleteLeadsMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const response = await fetch('/api/leads', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      })
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Error deleting leads')
+      }
+      return response.json()
+    },
+    onSuccess: () => {
+      setSelectedLeadIds(new Set())
+      queryClient.invalidateQueries({ queryKey: ['leads'] })
+    },
   })
 
   const leads: Lead[] = data?.leads || []
@@ -183,9 +208,50 @@ export default function LeadsPage() {
       // Has website filter
       if (filters.hasWebsite !== null && lead.hasWebsite !== filters.hasWebsite) return false
 
+      // Low probability filter (red)
+      if (filters.lowProbability) {
+        if ((lead.webProbability || 0) >= 40) return false
+      }
+
       return true
     })
   }, [leads, filters])
+
+  useEffect(() => {
+    setSelectedLeadIds(new Set())
+  }, [filters, searchQuery, viewMode])
+
+  const allSelected =
+    filteredLeads.length > 0 && filteredLeads.every((lead) => selectedLeadIds.has(lead.id))
+
+  const toggleSelectAll = () => {
+    if (allSelected) {
+      setSelectedLeadIds(new Set())
+    } else {
+      setSelectedLeadIds(new Set(filteredLeads.map((lead) => lead.id)))
+    }
+  }
+
+  const toggleSelectLead = (id: string) => {
+    setSelectedLeadIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
+  }
+
+  const handleBulkDelete = () => {
+    if (selectedLeadIds.size === 0) return
+    const confirmed = window.confirm(
+      `¿Eliminar ${selectedLeadIds.size} lead(s)? Esta acción no se puede deshacer.`
+    )
+    if (!confirmed) return
+    deleteLeadsMutation.mutate(Array.from(selectedLeadIds))
+  }
 
   // Group leads by stage for Kanban
   const leadsByStage = useMemo(() => {
@@ -260,11 +326,12 @@ export default function LeadsPage() {
               leftIcon={<Filter className="w-4 h-4" />}
             >
               Filtros
-              {(filters.stage || filters.source || filters.hasWebsite !== null) && (
+              {(filters.stage || filters.source || filters.hasWebsite !== null || filters.lowProbability) && (
                 <span className="ml-1 w-5 h-5 rounded-full bg-brand-500 text-white text-xs flex items-center justify-center">
                   {(filters.stage ? 1 : 0) +
                     (filters.source ? 1 : 0) +
-                    (filters.hasWebsite !== null ? 1 : 0)}
+                    (filters.hasWebsite !== null ? 1 : 0) +
+                    (filters.lowProbability ? 1 : 0)}
                 </span>
               )}
             </Button>
@@ -280,7 +347,7 @@ export default function LeadsPage() {
               exit={{ height: 0, opacity: 0 }}
               className="overflow-hidden"
             >
-              <div className="pt-4 mt-4 border-t border-dark-border grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="pt-4 mt-4 border-t border-dark-border grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 {/* Stage filter */}
                 <div>
                   <label className="block text-sm font-medium text-dark-muted mb-2">
@@ -337,11 +404,57 @@ export default function LeadsPage() {
                     <option value="true">Con web</option>
                   </select>
                 </div>
+
+                {/* Low probability filter */}
+                <div>
+                  <label className="block text-sm font-medium text-dark-muted mb-2">
+                    Probabilidad
+                  </label>
+                  <select
+                    value={filters.lowProbability ? 'low' : 'all'}
+                    onChange={(e) =>
+                      setFilters({
+                        ...filters,
+                        lowProbability: e.target.value === 'low',
+                      })
+                    }
+                    className="w-full h-10 px-3 rounded-lg border border-dark-border bg-dark-card text-dark-text"
+                  >
+                    <option value="all">Todas</option>
+                    <option value="low">Baja (rojo)</option>
+                  </select>
+                </div>
               </div>
             </motion.div>
           )}
         </AnimatePresence>
       </Card>
+
+      {selectedLeadIds.size > 0 && viewMode === 'table' && (
+        <Card className="p-3 flex items-center justify-between">
+          <span className="text-sm text-dark-text">
+            {selectedLeadIds.size} lead(s) seleccionados
+          </span>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setSelectedLeadIds(new Set())}
+            >
+              Limpiar selección
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              leftIcon={<Trash2 className="w-4 h-4" />}
+              onClick={handleBulkDelete}
+              isLoading={deleteLeadsMutation.isPending}
+            >
+              Eliminar
+            </Button>
+          </div>
+        </Card>
+      )}
 
       {/* Content */}
       {isLoading ? (
@@ -355,7 +468,14 @@ export default function LeadsPage() {
           </div>
         )
       ) : viewMode === 'table' ? (
-        <LeadsTable leads={filteredLeads} stages={stages} />
+        <LeadsTable
+          leads={filteredLeads}
+          stages={stages}
+          selectedLeadIds={selectedLeadIds}
+          allSelected={allSelected}
+          onToggleAll={toggleSelectAll}
+          onToggleLead={toggleSelectLead}
+        />
       ) : (
         <LeadsKanban leadsByStage={leadsByStage} stages={stages} />
       )}
@@ -364,7 +484,21 @@ export default function LeadsPage() {
 }
 
 // Table view component
-function LeadsTable({ leads, stages }: { leads: Lead[]; stages: PipelineStage[] }) {
+function LeadsTable({
+  leads,
+  stages,
+  selectedLeadIds,
+  allSelected,
+  onToggleAll,
+  onToggleLead,
+}: {
+  leads: Lead[]
+  stages: PipelineStage[]
+  selectedLeadIds: Set<string>
+  allSelected: boolean
+  onToggleAll: () => void
+  onToggleLead: (id: string) => void
+}) {
   const getStage = (stageId: string) => stages.find((s) => s.id === stageId)
 
   return (
@@ -373,6 +507,14 @@ function LeadsTable({ leads, stages }: { leads: Lead[]; stages: PipelineStage[] 
         <table className="w-full">
           <thead>
             <tr className="border-b border-dark-border">
+              <th className="text-left p-4 text-sm font-medium text-dark-muted">
+                <input
+                  type="checkbox"
+                  checked={allSelected}
+                  onChange={onToggleAll}
+                  className="h-4 w-4 rounded border-dark-border bg-dark-card text-brand-500"
+                />
+              </th>
               <th className="text-left p-4 text-sm font-medium text-dark-muted">Negocio</th>
               <th className="text-left p-4 text-sm font-medium text-dark-muted">Categoría</th>
               <th className="text-left p-4 text-sm font-medium text-dark-muted">Etapa</th>
@@ -392,8 +534,19 @@ function LeadsTable({ leads, stages }: { leads: Lead[]; stages: PipelineStage[] 
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: index * 0.03 }}
-                  className="border-b border-dark-border hover:bg-dark-hover transition-colors"
+                  className={cn(
+                    'border-b border-dark-border hover:bg-dark-hover transition-colors',
+                    selectedLeadIds.has(lead.id) && 'bg-dark-hover/60'
+                  )}
                 >
+                  <td className="p-4">
+                    <input
+                      type="checkbox"
+                      checked={selectedLeadIds.has(lead.id)}
+                      onChange={() => onToggleLead(lead.id)}
+                      className="h-4 w-4 rounded border-dark-border bg-dark-card text-brand-500"
+                    />
+                  </td>
                   <td className="p-4">
                     <Link
                       href={`/dashboard/leads/${lead.id}`}

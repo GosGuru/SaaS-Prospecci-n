@@ -1,526 +1,919 @@
 'use client'
 
-import { useState, useMemo, useRef, useEffect } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
-import { useQuery } from '@tanstack/react-query'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import {
-  Inbox,
+  Search,
   MessageCircle,
   Mail,
-  Search,
-  Filter,
-  Star,
-  Archive,
-  Trash2,
-  MoreVertical,
-  Send,
-  Paperclip,
-  Image,
-  Smile,
-  Phone,
+  Inbox,
   User,
-  Clock,
+  Phone,
+  RefreshCw,
+  Send,
+  Smile,
+  Loader2,
+  ArrowLeft,
   Check,
   CheckCheck,
-  ChevronRight,
-  ArrowLeft,
-  RefreshCw,
+  Clock,
+  Trash2,
+  Archive,
+  Ban,
+  AlertTriangle,
 } from 'lucide-react'
-import Link from 'next/link'
 import { Button } from '@/components/ui/button'
-import { SearchInput } from '@/components/ui/input'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Modal } from '@/components/ui/modal'
 import { cn, formatRelativeTime } from '@/lib/utils'
-import type { Conversation, Lead, InboundMessage, OutboundMessage } from '@/types'
+import { EmojiPicker } from '@/components/inbox/EmojiPicker'
+import { FileUploader } from '@/components/inbox/FileUploader'
+import { ConversationMenu } from '@/components/inbox/ConversationMenu'
+import toast from 'react-hot-toast'
 
 type ChannelFilter = 'all' | 'whatsapp' | 'email'
 
-// Demo conversations
-const DEMO_CONVERSATIONS: Conversation[] = [
-  {
-    id: '1',
-    lead: {
-      id: '1',
-      name: 'La Parrilla de Juan',
-      phone: '+54 11 4567-8901',
-      email: 'contacto@laparrilladejuan.com',
-      category: 'Restaurante',
-      status: 'active',
-      workspaceId: 'demo',
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    },
-    channel: 'whatsapp',
-    lastMessage: '¡Hola! Sí, me interesa saber más sobre el servicio de diseño web.',
-    lastMessageAt: new Date(Date.now() - 1000 * 60 * 5), // 5 mins ago
-    isRead: false,
-    messageCount: 8,
-  },
-  {
-    id: '2',
-    lead: {
-      id: '2',
-      name: 'Peluquería Style',
-      phone: '+54 11 5555-1234',
-      email: 'info@peluqueriastyle.com',
-      category: 'Peluquería',
-      status: 'active',
-      workspaceId: 'demo',
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    },
-    channel: 'email',
-    lastMessage: 'Gracias por la información. ¿Podríamos coordinar una llamada?',
-    lastMessageAt: new Date(Date.now() - 1000 * 60 * 60 * 2), // 2 hours ago
-    isRead: true,
-    messageCount: 5,
-  },
-  {
-    id: '3',
-    lead: {
-      id: '3',
-      name: 'Gimnasio Power Fit',
-      phone: '+54 11 4444-5678',
-      email: 'info@powerfit.com',
-      category: 'Gimnasio',
-      status: 'active',
-      workspaceId: 'demo',
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    },
-    channel: 'whatsapp',
-    lastMessage: 'Perfecto, mañana a las 10 me viene bien para la llamada.',
-    lastMessageAt: new Date(Date.now() - 1000 * 60 * 60 * 24), // 1 day ago
-    isRead: true,
-    messageCount: 12,
-  },
-  {
-    id: '4',
-    lead: {
-      id: '4',
-      name: 'Veterinaria San Roque',
-      phone: '+54 11 6666-7890',
-      email: 'consultas@vetsanroque.com',
-      category: 'Veterinaria',
-      status: 'active',
-      workspaceId: 'demo',
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    },
-    channel: 'email',
-    lastMessage: 'Les envío el presupuesto adjunto.',
-    lastMessageAt: new Date(Date.now() - 1000 * 60 * 60 * 48), // 2 days ago
-    isRead: true,
-    messageCount: 3,
-  },
-]
+interface Conversation {
+  id: string
+  lead: {
+    id: string
+    name: string
+    businessName: string | null
+    email: string | null
+    phone: string | null
+    avatar: string | null
+  }
+  channel: 'whatsapp' | 'email' | 'both'
+  lastMessage: string
+  lastMessageAt: string
+  lastMessageChannel: string
+  isRead: boolean
+  messageCount: number
+  unreadCount: number
+}
 
-// Demo messages for selected conversation
-const DEMO_MESSAGES = [
-  {
-    id: '1',
-    type: 'outbound',
-    content: '¡Hola! Somos de una agencia de desarrollo web. Encontramos La Parrilla de Juan en Google Maps y notamos que no tienen sitio web. ¿Les interesaría tener presencia online?',
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24 * 2),
-    status: 'read',
-  },
-  {
-    id: '2',
-    type: 'inbound',
-    content: '¡Hola! Sí, es algo que venimos pensando hace rato pero no sabemos por dónde empezar.',
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24 * 2 + 1000 * 60 * 30),
-  },
-  {
-    id: '3',
-    type: 'outbound',
-    content: '¡Genial! Podemos ayudarlos. Un sitio web les permitiría mostrar su menú, tomar reservas online y aparecer mejor en búsquedas de Google. ¿Les gustaría que les cuente más?',
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24),
-    status: 'read',
-  },
-  {
-    id: '4',
-    type: 'inbound',
-    content: '¡Hola! Sí, me interesa saber más sobre el servicio de diseño web.',
-    timestamp: new Date(Date.now() - 1000 * 60 * 5),
-  },
-]
+interface Message {
+  id: string
+  type: 'inbound' | 'outbound'
+  channel: string
+  content: string
+  subject?: string | null
+  timestamp: string
+  from?: string
+  to?: string
+  status?: string
+  sentAt?: string
+  deliveredAt?: string
+  readAt?: string
+  failedAt?: string
+  errorMessage?: string | null
+  isRead?: boolean
+  metadata?: any
+}
 
 export default function InboxPage() {
   const [channelFilter, setChannelFilter] = useState<ChannelFilter>('all')
   const [searchQuery, setSearchQuery] = useState('')
-  const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null)
+  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null)
   const [messageInput, setMessageInput] = useState('')
+  const [isSending, setIsSending] = useState(false)
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [filePreview, setFilePreview] = useState<string | null>(null)
+  
+  // Data states
+  const [conversations, setConversations] = useState<Conversation[]>([])
+  const [messages, setMessages] = useState<Message[]>([])
+  const [isLoadingConversations, setIsLoadingConversations] = useState(true)
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [workspaceId, setWorkspaceId] = useState<string | null>(null)
+
+  // Modal states
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [showArchiveModal, setShowArchiveModal] = useState(false)
+  const [showBlockModal, setShowBlockModal] = useState(false)
+  const [actionLeadId, setActionLeadId] = useState<string | null>(null)
+  const [actionLeadName, setActionLeadName] = useState<string>('')
+
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  // Filter conversations
-  const filteredConversations = useMemo(() => {
-    return DEMO_CONVERSATIONS.filter((conv) => {
-      // Channel filter
-      if (channelFilter !== 'all' && conv.channel !== channelFilter) return false
-
-      // Search filter
-      if (searchQuery) {
-        const query = searchQuery.toLowerCase()
-        const matchesSearch =
-          conv.lead.name.toLowerCase().includes(query) ||
-          conv.lastMessage.toLowerCase().includes(query)
-        if (!matchesSearch) return false
-      }
-
-      return true
-    })
+  // Fetch conversations
+  useEffect(() => {
+    fetchConversations()
+    fetchWorkspace()
+    // Polling every 10 seconds for new messages
+    const interval = setInterval(fetchConversations, 10000)
+    return () => clearInterval(interval)
   }, [channelFilter, searchQuery])
 
-  // Scroll to bottom when new messages arrive
+  async function fetchWorkspace() {
+    try {
+      const response = await fetch('/api/workspace')
+      if (response.ok) {
+        const data = await response.json()
+        setWorkspaceId(data.id)
+      }
+    } catch (err) {
+      console.error('Error fetching workspace:', err)
+    }
+  }
+
+  // Fetch messages when conversation is selected
+  useEffect(() => {
+    if (selectedConversationId) {
+      fetchMessages(selectedConversationId)
+      // Mark as read
+      markAsRead(selectedConversationId)
+    }
+  }, [selectedConversationId])
+
+  // Auto-scroll to bottom when messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [selectedConversation])
+  }, [messages])
 
-  const unreadCount = DEMO_CONVERSATIONS.filter((c) => !c.isRead).length
+  // Auto-resize textarea
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto'
+      textareaRef.current.style.height = textareaRef.current.scrollHeight + 'px'
+    }
+  }, [messageInput])
+
+  async function fetchConversations() {
+    try {
+      const params = new URLSearchParams()
+      if (channelFilter !== 'all') {
+        params.append('channel', channelFilter)
+      }
+      if (searchQuery) {
+        params.append('search', searchQuery)
+      }
+
+      const response = await fetch(`/api/inbox/conversations?${params}`)
+      if (!response.ok) throw new Error('Error al cargar conversaciones')
+      
+      const data = await response.json()
+      setConversations(data)
+      setError(null)
+    } catch (err) {
+      console.error('Error fetching conversations:', err)
+      setError('Error al cargar conversaciones')
+    } finally {
+      setIsLoadingConversations(false)
+    }
+  }
+
+  async function fetchMessages(leadId: string) {
+    setIsLoadingMessages(true)
+    try {
+      const response = await fetch(`/api/inbox/conversations/${leadId}`)
+      if (!response.ok) throw new Error('Error al cargar mensajes')
+      
+      const data = await response.json()
+      setMessages(data.messages)
+      setError(null)
+    } catch (err) {
+      console.error('Error fetching messages:', err)
+      setError('Error al cargar mensajes')
+      setMessages([])
+    } finally {
+      setIsLoadingMessages(false)
+    }
+  }
+
+  async function markAsRead(leadId: string) {
+    try {
+      await fetch(`/api/inbox/conversations/${leadId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'mark_read' })
+      })
+      
+      // Update local state
+      setConversations(prev => prev.map(conv => 
+        conv.id === leadId 
+          ? { ...conv, isRead: true, unreadCount: 0 }
+          : conv
+      ))
+    } catch (err) {
+      console.error('Error marking as read:', err)
+    }
+  }
+
+  function confirmDelete(leadId: string, leadName: string) {
+    setActionLeadId(leadId)
+    setActionLeadName(leadName)
+    setShowDeleteModal(true)
+  }
+
+  async function deleteConversation() {
+    if (!actionLeadId) return
+
+    try {
+      const response = await fetch(`/api/inbox/conversations/${actionLeadId}`, {
+        method: 'DELETE'
+      })
+      
+      if (!response.ok) throw new Error('Error al eliminar conversación')
+      
+      // Remove from local state
+      setConversations(prev => prev.filter(conv => conv.id !== actionLeadId))
+      
+      // Clear selection if it was the selected conversation
+      if (selectedConversationId === actionLeadId) {
+        setSelectedConversationId(null)
+        setMessages([])
+      }
+      
+      toast.success('Conversación eliminada correctamente')
+      setShowDeleteModal(false)
+      setActionLeadId(null)
+    } catch (err) {
+      console.error('Error deleting conversation:', err)
+      toast.error('Error al eliminar la conversación')
+    }
+  }
+
+  function confirmArchive(leadId: string, leadName: string) {
+    setActionLeadId(leadId)
+    setActionLeadName(leadName)
+    setShowArchiveModal(true)
+  }
+
+  async function archiveConversation() {
+    if (!actionLeadId) return
+
+    try {
+      const response = await fetch(`/api/inbox/conversations/${actionLeadId}/archive`, {
+        method: 'POST'
+      })
+      
+      if (!response.ok) throw new Error('Error al archivar conversación')
+      
+      // Remove from active conversations
+      setConversations(prev => prev.filter(conv => conv.id !== actionLeadId))
+      
+      // Clear selection if it was the selected conversation
+      if (selectedConversationId === actionLeadId) {
+        setSelectedConversationId(null)
+        setMessages([])
+      }
+      
+      toast.success('Conversación archivada correctamente')
+      setShowArchiveModal(false)
+      setActionLeadId(null)
+    } catch (err) {
+      console.error('Error archiving conversation:', err)
+      toast.error('Error al archivar la conversación')
+    }
+  }
+
+  function confirmBlock(leadId: string, leadName: string) {
+    setActionLeadId(leadId)
+    setActionLeadName(leadName)
+    setShowBlockModal(true)
+  }
+
+  async function blockContact() {
+    if (!actionLeadId) return
+
+    try {
+      const response = await fetch(`/api/inbox/conversations/${actionLeadId}/block`, {
+        method: 'POST'
+      })
+      
+      if (!response.ok) throw new Error('Error al bloquear contacto')
+      
+      // Remove from conversations
+      setConversations(prev => prev.filter(conv => conv.id !== actionLeadId))
+      
+      // Clear selection if it was the selected conversation
+      if (selectedConversationId === actionLeadId) {
+        setSelectedConversationId(null)
+        setMessages([])
+      }
+      
+      toast.success('Contacto bloqueado correctamente')
+      setShowBlockModal(false)
+      setActionLeadId(null)
+    } catch (err) {
+      console.error('Error blocking contact:', err)
+      toast.error('Error al bloquear el contacto')
+    }
+  }
+
+  async function handleSendMessage(e: React.FormEvent) {
+    e.preventDefault()
+    
+    if (!messageInput.trim() && !selectedFile) return
+    if (!selectedConversationId) return
+
+    const selectedConversation = conversations.find(c => c.id === selectedConversationId)
+    if (!selectedConversation) return
+
+    // Determine channel from conversation
+    let channel = selectedConversation.lastMessageChannel
+    if (selectedConversation.channel === 'both') {
+      // Use last message channel or default to whatsapp
+      channel = channel || 'whatsapp'
+    } else {
+      channel = selectedConversation.channel
+    }
+
+    setIsSending(true)
+
+    try {
+      let endpoint = ''
+      let body: any = {
+        leadId: selectedConversationId,
+        message: messageInput,
+        workspaceId: workspaceId
+      }
+
+      if (channel === 'whatsapp') {
+        endpoint = '/api/whatsapp/send'
+        // TODO: Handle file upload for WhatsApp
+      } else if (channel === 'email') {
+        endpoint = '/api/email/send'
+        body.subject = `Re: Conversación con ${selectedConversation.lead.businessName || selectedConversation.lead.name}`
+        // TODO: Handle attachments for email
+      }
+
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Error al enviar mensaje')
+      }
+
+      // Clear input
+      setMessageInput('')
+      setSelectedFile(null)
+      setFilePreview(null)
+
+      // Refresh messages
+      await fetchMessages(selectedConversationId)
+      await fetchConversations()
+
+    } catch (err: any) {
+      console.error('Error sending message:', err)
+      alert(err.message || 'Error al enviar mensaje. Por favor, intenta de nuevo.')
+    } finally {
+      setIsSending(false)
+    }
+  }
+
+  function handleEmojiSelect(emoji: string) {
+    const textarea = textareaRef.current
+    if (!textarea) return
+
+    const start = textarea.selectionStart
+    const end = textarea.selectionEnd
+    const text = messageInput
+    const before = text.substring(0, start)
+    const after = text.substring(end)
+    
+    setMessageInput(before + emoji + after)
+    
+    // Set cursor position after emoji
+    setTimeout(() => {
+      textarea.selectionStart = textarea.selectionEnd = start + emoji.length
+      textarea.focus()
+    }, 0)
+  }
+
+  function handleFileSelect(file: File, preview?: string) {
+    setSelectedFile(file)
+    if (preview) {
+      setFilePreview(preview)
+    }
+  }
+
+  function handleRemoveFile() {
+    setSelectedFile(null)
+    setFilePreview(null)
+  }
+
+  const filteredConversations = useMemo(() => {
+    return conversations.filter(conv => {
+      // Channel filter is already handled by API
+      return true
+    })
+  }, [conversations])
+
+  const selectedConversation = conversations.find(c => c.id === selectedConversationId)
+
+  const getChannelIcon = (channel: string) => {
+    if (channel === 'whatsapp') {
+      return <MessageCircle className="w-4 h-4" />
+    }
+    return <Mail className="w-4 h-4" />
+  }
+
+  const getMessageStatus = (message: Message) => {
+    if (message.type === 'inbound') return null
+    
+    if (message.failedAt) {
+      return <span className="text-xs text-red-400">Error</span>
+    }
+    if (message.readAt) {
+      return <CheckCheck className="w-4 h-4 text-brand-400" />
+    }
+    if (message.deliveredAt) {
+      return <CheckCheck className="w-4 h-4 text-dark-muted" />
+    }
+    if (message.sentAt) {
+      return <Check className="w-4 h-4 text-dark-muted" />
+    }
+    return <Clock className="w-4 h-4 text-dark-muted" />
+  }
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] -mt-6 -mx-6">
-      {/* Conversation list */}
-      <div
-        className={cn(
-          'w-full md:w-96 border-r border-dark-border flex flex-col bg-dark-card',
-          selectedConversation && 'hidden md:flex'
-        )}
-      >
-        {/* Header */}
-        <div className="p-4 border-b border-dark-border">
-          <div className="flex items-center justify-between mb-4">
-            <h1 className="text-xl font-bold text-dark-text">Inbox</h1>
-            {unreadCount > 0 && (
-              <Badge variant="brand">{unreadCount} nuevos</Badge>
+    <div className="h-[calc(100vh-5rem)] flex flex-col">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-dark-text flex items-center gap-2">
+            <Inbox className="w-7 h-7" />
+            Inbox
+          </h1>
+          <p className="text-dark-muted mt-1">
+            {filteredConversations.length} conversaciones
+            {filteredConversations.filter(c => !c.isRead).length > 0 && (
+              <span className="text-brand-400 ml-1">
+                · {filteredConversations.filter(c => !c.isRead).length} sin leer
+              </span>
             )}
-          </div>
-
-          {/* Search */}
-          <SearchInput
-            placeholder="Buscar conversaciones..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="mb-3"
-          />
-
-          {/* Channel filter */}
-          <div className="flex gap-2">
-            <button
-              onClick={() => setChannelFilter('all')}
-              className={cn(
-                'flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors',
-                channelFilter === 'all'
-                  ? 'bg-brand-500 text-white'
-                  : 'bg-dark-hover text-dark-muted hover:text-dark-text'
-              )}
-            >
-              Todos
-            </button>
-            <button
-              onClick={() => setChannelFilter('whatsapp')}
-              className={cn(
-                'flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-1',
-                channelFilter === 'whatsapp'
-                  ? 'bg-green-500 text-white'
-                  : 'bg-dark-hover text-dark-muted hover:text-dark-text'
-              )}
-            >
-              <MessageCircle className="w-4 h-4" />
-              WhatsApp
-            </button>
-            <button
-              onClick={() => setChannelFilter('email')}
-              className={cn(
-                'flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-1',
-                channelFilter === 'email'
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-dark-hover text-dark-muted hover:text-dark-text'
-              )}
-            >
-              <Mail className="w-4 h-4" />
-              Email
-            </button>
-          </div>
+          </p>
         </div>
-
-        {/* Conversation list */}
-        <div className="flex-1 overflow-y-auto">
-          {filteredConversations.length === 0 ? (
-            <div className="p-8 text-center">
-              <Inbox className="w-12 h-12 text-dark-muted mx-auto mb-4" />
-              <p className="text-dark-muted">No hay conversaciones</p>
-            </div>
-          ) : (
-            <div className="divide-y divide-dark-border">
-              {filteredConversations.map((conversation) => (
-                <ConversationItem
-                  key={conversation.id}
-                  conversation={conversation}
-                  isSelected={selectedConversation?.id === conversation.id}
-                  onClick={() => setSelectedConversation(conversation)}
-                />
-              ))}
-            </div>
-          )}
-        </div>
+        
+        <Button
+          onClick={() => fetchConversations()}
+          variant="ghost"
+          size="sm"
+          disabled={isLoadingConversations}
+        >
+          <RefreshCw className={cn("w-4 h-4", isLoadingConversations && "animate-spin")} />
+        </Button>
       </div>
 
-      {/* Conversation detail */}
-      <div
-        className={cn(
-          'flex-1 flex flex-col bg-dark-bg',
-          !selectedConversation && 'hidden md:flex'
-        )}
-      >
-        {selectedConversation ? (
-          <>
-            {/* Conversation header */}
-            <div className="p-4 border-b border-dark-border bg-dark-card flex items-center gap-4">
+      <div className="grid grid-cols-12 gap-6 flex-1 min-h-0">
+        {/* Conversations List */}
+        <Card className="col-span-4 flex flex-col p-0 overflow-hidden">
+          {/* Filters */}
+          <div className="p-4 border-b border-dark-border space-y-3">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-dark-muted" />
+              <input
+                type="text"
+                placeholder="Buscar conversaciones..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 bg-dark-hover border border-dark-border rounded-lg text-sm text-dark-text placeholder:text-dark-muted focus:outline-none focus:ring-2 focus:ring-brand-500/50"
+              />
+            </div>
+
+            <div className="flex gap-2">
               <button
-                onClick={() => setSelectedConversation(null)}
-                className="md:hidden p-2 rounded-lg hover:bg-dark-hover"
+                onClick={() => setChannelFilter('all')}
+                className={cn(
+                  "flex-1 px-3 py-1.5 rounded-lg text-sm transition-colors",
+                  channelFilter === 'all'
+                    ? "bg-brand-500/20 text-brand-400 border border-brand-500/30"
+                    : "bg-dark-hover text-dark-muted hover:text-dark-text"
+                )}
               >
-                <ArrowLeft className="w-5 h-5 text-dark-muted" />
+                Todos
               </button>
-
-              <div className="w-10 h-10 rounded-full bg-dark-hover flex items-center justify-center">
-                <User className="w-5 h-5 text-dark-muted" />
-              </div>
-
-              <div className="flex-1 min-w-0">
-                <Link
-                  href={`/dashboard/leads/${selectedConversation.lead.id}`}
-                  className="font-medium text-dark-text hover:text-brand-400"
-                >
-                  {selectedConversation.lead.name}
-                </Link>
-                <p className="text-sm text-dark-muted flex items-center gap-2">
-                  {selectedConversation.channel === 'whatsapp' ? (
-                    <>
-                      <MessageCircle className="w-3 h-3" />
-                      {selectedConversation.lead.phone}
-                    </>
-                  ) : (
-                    <>
-                      <Mail className="w-3 h-3" />
-                      {selectedConversation.lead.email}
-                    </>
-                  )}
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <Badge
-                  variant={selectedConversation.channel === 'whatsapp' ? 'success' : 'brand'}
-                >
-                  {selectedConversation.channel === 'whatsapp' ? 'WhatsApp' : 'Email'}
-                </Badge>
-                <Button variant="ghost" size="sm">
-                  <MoreVertical className="w-4 h-4" />
-                </Button>
-              </div>
+              <button
+                onClick={() => setChannelFilter('whatsapp')}
+                className={cn(
+                  "flex-1 px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center justify-center gap-1.5",
+                  channelFilter === 'whatsapp'
+                    ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                    : "bg-dark-hover text-dark-muted hover:text-dark-text"
+                )}
+              >
+                <MessageCircle className="w-3.5 h-3.5" />
+                WhatsApp
+              </button>
+              <button
+                onClick={() => setChannelFilter('email')}
+                className={cn(
+                  "flex-1 px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center justify-center gap-1.5",
+                  channelFilter === 'email'
+                    ? "bg-brand-500/20 text-brand-400 border border-brand-500/30"
+                    : "bg-dark-hover text-dark-muted hover:text-dark-text"
+                )}
+              >
+                <Mail className="w-3.5 h-3.5" />
+                Email
+              </button>
             </div>
+          </div>
 
-            {/* Messages */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              {DEMO_MESSAGES.map((message, index) => (
-                <MessageBubble key={message.id} message={message} index={index} />
-              ))}
-              <div ref={messagesEndRef} />
-            </div>
+          {/* Conversations */}
+          <div className="flex-1 overflow-y-auto">
+            {isLoadingConversations && conversations.length === 0 ? (
+              <div className="flex items-center justify-center h-full">
+                <Loader2 className="w-6 h-6 animate-spin text-dark-muted" />
+              </div>
+            ) : filteredConversations.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full p-6 text-center">
+                <Inbox className="w-12 h-12 text-dark-muted mb-3" />
+                <p className="text-dark-muted text-sm">No hay conversaciones</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-dark-border">
+                {filteredConversations.map((conversation) => (
+                  <button
+                    key={conversation.id}
+                    onClick={() => setSelectedConversationId(conversation.id)}
+                    className={cn(
+                      "w-full p-4 text-left hover:bg-dark-hover transition-colors",
+                      selectedConversationId === conversation.id && "bg-dark-hover border-l-2 border-brand-500",
+                      !conversation.isRead && "bg-brand-500/5"
+                    )}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="w-10 h-10 rounded-full bg-dark-border flex items-center justify-center flex-shrink-0">
+                        {conversation.lead.avatar ? (
+                          <img
+                            src={conversation.lead.avatar}
+                            alt={conversation.lead.businessName || conversation.lead.name}
+                            className="w-full h-full rounded-full object-cover"
+                          />
+                        ) : (
+                          <User className="w-5 h-5 text-dark-muted" />
+                        )}
+                      </div>
 
-            {/* Message input */}
-            <div className="p-4 border-t border-dark-border bg-dark-card">
-              <div className="flex items-end gap-2">
-                <div className="flex gap-1">
-                  <button className="p-2 rounded-lg hover:bg-dark-hover text-dark-muted hover:text-dark-text transition-colors">
-                    <Paperclip className="w-5 h-5" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                          <h3 className={cn(
+                            "text-sm truncate",
+                            !conversation.isRead ? "font-semibold text-dark-text" : "text-dark-text"
+                          )}>
+                            {conversation.lead.businessName || conversation.lead.name}
+                          </h3>
+                          <span className="text-xs text-dark-muted flex-shrink-0">
+                            {formatRelativeTime(new Date(conversation.lastMessageAt))}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <div className={cn(
+                            "flex items-center gap-1",
+                            conversation.lastMessageChannel === 'whatsapp' ? "text-emerald-400" : "text-brand-400"
+                          )}>
+                            {getChannelIcon(conversation.lastMessageChannel)}
+                          </div>
+                          <p className={cn(
+                            "text-sm truncate flex-1",
+                            !conversation.isRead ? "font-medium text-dark-text" : "text-dark-muted"
+                          )}>
+                            {conversation.lastMessage}
+                          </p>
+                          {conversation.unreadCount > 0 && (
+                            <Badge variant="brand" className="flex-shrink-0">
+                              {conversation.unreadCount}
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                    </div>
                   </button>
-                  <button className="p-2 rounded-lg hover:bg-dark-hover text-dark-muted hover:text-dark-text transition-colors">
-                    <Image className="w-5 h-5" />
+                ))}
+              </div>
+            )}
+          </div>
+        </Card>
+
+        {/* Messages Area */}
+        <Card className="col-span-8 flex flex-col p-0 overflow-hidden">
+          {selectedConversation ? (
+            <>
+              {/* Conversation Header */}
+              <div className="p-4 border-b border-dark-border flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setSelectedConversationId(null)}
+                    className="lg:hidden p-2 hover:bg-dark-hover rounded-lg transition-colors"
+                  >
+                    <ArrowLeft className="w-5 h-5" />
                   </button>
-                  <button className="p-2 rounded-lg hover:bg-dark-hover text-dark-muted hover:text-dark-text transition-colors">
-                    <Smile className="w-5 h-5" />
-                  </button>
+                  
+                  <div className="w-10 h-10 rounded-full bg-dark-border flex items-center justify-center">
+                    {selectedConversation.lead.avatar ? (
+                      <img
+                        src={selectedConversation.lead.avatar}
+                        alt={selectedConversation.lead.businessName || selectedConversation.lead.name}
+                        className="w-full h-full rounded-full object-cover"
+                      />
+                    ) : (
+                      <User className="w-5 h-5 text-dark-muted" />
+                    )}
+                  </div>
+
+                  <div>
+                    <h2 className="text-base font-semibold text-dark-text">
+                      {selectedConversation.lead.businessName || selectedConversation.lead.name}
+                    </h2>
+                    <div className="flex items-center gap-2 text-xs text-dark-muted">
+                      {selectedConversation.lead.phone && (
+                        <span className="flex items-center gap-1">
+                          <Phone className="w-3 h-3" />
+                          {selectedConversation.lead.phone}
+                        </span>
+                      )}
+                      {selectedConversation.lead.email && (
+                        <span className="flex items-center gap-1">
+                          <Mail className="w-3 h-3" />
+                          {selectedConversation.lead.email}
+                        </span>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
-                <textarea
-                  value={messageInput}
-                  onChange={(e) => setMessageInput(e.target.value)}
-                  placeholder="Escribí un mensaje..."
-                  className="flex-1 resize-none rounded-lg bg-dark-bg border border-dark-border p-3 text-dark-text placeholder:text-dark-muted focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 max-h-32"
-                  rows={1}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault()
-                      // Send message
-                    }
-                  }}
+                <ConversationMenu
+                  leadId={selectedConversation.id}
+                  leadName={selectedConversation.lead.businessName || selectedConversation.lead.name}
+                  onArchive={() => confirmArchive(selectedConversation.id, selectedConversation.lead.businessName || selectedConversation.lead.name)}
+                  onDelete={() => confirmDelete(selectedConversation.id, selectedConversation.lead.businessName || selectedConversation.lead.name)}
+                  onBlock={() => confirmBlock(selectedConversation.id, selectedConversation.lead.businessName || selectedConversation.lead.name)}
                 />
-
-                <Button
-                  variant="primary"
-                  className="h-11"
-                  disabled={!messageInput.trim()}
-                >
-                  <Send className="w-5 h-5" />
-                </Button>
               </div>
+
+              {/* Messages */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                {isLoadingMessages ? (
+                  <div className="flex items-center justify-center h-full">
+                    <Loader2 className="w-6 h-6 animate-spin text-dark-muted" />
+                  </div>
+                ) : messages.length === 0 ? (
+                  <div className="flex items-center justify-center h-full">
+                    <p className="text-dark-muted text-sm">No hay mensajes</p>
+                  </div>
+                ) : (
+                  <>
+                    {messages.map((message, index) => {
+                      const isOutbound = message.type === 'outbound'
+                      const showDate = index === 0 || 
+                        new Date(messages[index - 1].timestamp).toDateString() !== 
+                        new Date(message.timestamp).toDateString()
+
+                      return (
+                        <div key={message.id}>
+                          {showDate && (
+                            <div className="flex items-center justify-center my-4">
+                              <span className="text-xs text-dark-muted bg-dark-hover px-3 py-1 rounded-full">
+                                {new Date(message.timestamp).toLocaleDateString('es-ES', {
+                                  weekday: 'long',
+                                  year: 'numeric',
+                                  month: 'long',
+                                  day: 'numeric'
+                                })}
+                              </span>
+                            </div>
+                          )}
+
+                          <div className={cn(
+                            "flex gap-2",
+                            isOutbound ? "justify-end" : "justify-start"
+                          )}>
+                            <div className={cn(
+                              "max-w-[70%] rounded-lg p-3",
+                              isOutbound 
+                                ? "bg-brand-500 text-white" 
+                                : "bg-dark-hover text-dark-text"
+                            )}>
+                              {message.subject && (
+                                <p className="font-semibold text-sm mb-1">
+                                  {message.subject}
+                                </p>
+                              )}
+                              <p className="text-sm whitespace-pre-wrap break-words">
+                                {message.content}
+                              </p>
+                              <div className={cn(
+                                "flex items-center justify-end gap-1 mt-1",
+                                isOutbound ? "text-white/70" : "text-dark-muted"
+                              )}>
+                                <span className="text-xs">
+                                  {new Date(message.timestamp).toLocaleTimeString('es-ES', {
+                                    hour: '2-digit',
+                                    minute: '2-digit'
+                                  })}
+                                </span>
+                                {isOutbound && getMessageStatus(message)}
+                              </div>
+                              {message.errorMessage && (
+                                <p className="text-xs text-red-200 mt-1">
+                                  Error: {message.errorMessage}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                    <div ref={messagesEndRef} />
+                  </>
+                )}
+              </div>
+
+              {/* Message Input */}
+              <form onSubmit={handleSendMessage} className="p-4 border-t border-dark-border">
+                <div className="flex items-end gap-2">
+                  <div className="flex gap-1">
+                    <EmojiPicker onEmojiSelect={handleEmojiSelect} />
+                    <FileUploader
+                      onFileSelect={handleFileSelect}
+                      onRemoveFile={handleRemoveFile}
+                      selectedFile={selectedFile}
+                      preview={filePreview}
+                    />
+                  </div>
+
+                  <div className="flex-1">
+                    <textarea
+                      ref={textareaRef}
+                      value={messageInput}
+                      onChange={(e) => setMessageInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault()
+                          handleSendMessage(e)
+                        }
+                      }}
+                      placeholder="Escribe un mensaje..."
+                      className="w-full px-4 py-2 bg-dark-hover border border-dark-border rounded-lg text-sm text-dark-text placeholder:text-dark-muted focus:outline-none focus:ring-2 focus:ring-brand-500/50 resize-none min-h-[40px] max-h-[120px]"
+                      rows={1}
+                      disabled={isSending}
+                    />
+                  </div>
+
+                  <Button
+                    type="submit"
+                    disabled={isSending || (!messageInput.trim() && !selectedFile)}
+                    size="sm"
+                  >
+                    {isSending ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Send className="w-4 h-4" />
+                    )}
+                  </Button>
+                </div>
+                <p className="text-xs text-dark-muted mt-2">
+                  Presiona Enter para enviar, Shift + Enter para nueva línea
+                </p>
+              </form>
+            </>
+          ) : (
+            <div className="flex flex-col items-center justify-center h-full p-6 text-center">
+              <MessageCircle className="w-16 h-16 text-dark-muted mb-4" />
+              <h3 className="text-lg font-semibold text-dark-text mb-2">
+                Selecciona una conversación
+              </h3>
+              <p className="text-dark-muted text-sm max-w-sm">
+                Elige una conversación de la lista para ver los mensajes y responder
+              </p>
             </div>
-          </>
-        ) : (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="text-center">
-              <Inbox className="w-16 h-16 text-dark-muted mx-auto mb-4" />
-              <h2 className="text-xl font-medium text-dark-text mb-2">
-                Seleccioná una conversación
-              </h2>
-              <p className="text-dark-muted">
-                Elegí una conversación de la lista para ver los mensajes
+          )}
+        </Card>
+      </div>
+
+      {error && (
+        <div className="fixed bottom-4 right-4 bg-red-500/10 border border-red-500/20 text-red-400 px-4 py-3 rounded-lg">
+          {error}
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        isOpen={showDeleteModal}
+        onClose={() => setShowDeleteModal(false)}
+        title="Eliminar conversación"
+      >
+        <div className="space-y-4">
+          <div className="flex items-start gap-3 p-4 rounded-lg bg-red-500/10 border border-red-500/20">
+            <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm text-dark-text font-medium">
+                ¿Estás seguro de eliminar esta conversación?
+              </p>
+              <p className="text-sm text-dark-muted mt-1">
+                Se eliminará permanentemente la conversación con <strong>{actionLeadName}</strong>.
+                Esta acción no se puede deshacer.
               </p>
             </div>
           </div>
-        )}
-      </div>
-    </div>
-  )
-}
 
-// Conversation item component
-function ConversationItem({
-  conversation,
-  isSelected,
-  onClick,
-}: {
-  conversation: Conversation
-  isSelected: boolean
-  onClick: () => void
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        'w-full p-4 flex items-start gap-3 hover:bg-dark-hover transition-colors text-left',
-        isSelected && 'bg-dark-hover',
-        !conversation.isRead && 'bg-brand-500/5'
-      )}
-    >
-      {/* Avatar */}
-      <div className="relative">
-        <div className="w-12 h-12 rounded-full bg-dark-hover flex items-center justify-center">
-          <User className="w-6 h-6 text-dark-muted" />
+          <div className="flex gap-3">
+            <Button
+              variant="secondary"
+              className="flex-1"
+              onClick={() => setShowDeleteModal(false)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="danger"
+              className="flex-1"
+              onClick={deleteConversation}
+              leftIcon={<Trash2 className="w-4 h-4" />}
+            >
+              Eliminar
+            </Button>
+          </div>
         </div>
-        <div
-          className={cn(
-            'absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center',
-            conversation.channel === 'whatsapp' ? 'bg-green-500' : 'bg-blue-500'
-          )}
-        >
-          {conversation.channel === 'whatsapp' ? (
-            <MessageCircle className="w-3 h-3 text-white" />
-          ) : (
-            <Mail className="w-3 h-3 text-white" />
-          )}
-        </div>
-      </div>
+      </Modal>
 
-      {/* Content */}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center justify-between gap-2">
-          <span
-            className={cn(
-              'font-medium truncate',
-              !conversation.isRead ? 'text-dark-text' : 'text-dark-muted'
-            )}
-          >
-            {conversation.lead.name}
-          </span>
-          <span className="text-xs text-dark-muted flex-shrink-0">
-            {formatRelativeTime(conversation.lastMessageAt)}
-          </span>
-        </div>
-
-        <p
-          className={cn(
-            'text-sm truncate mt-1',
-            !conversation.isRead ? 'text-dark-text font-medium' : 'text-dark-muted'
-          )}
-        >
-          {conversation.lastMessage}
-        </p>
-
-        <div className="flex items-center gap-2 mt-1">
-          <Badge variant="neutral" className="text-xs">
-            {conversation.lead.category}
-          </Badge>
-          {!conversation.isRead && (
-            <span className="w-2 h-2 rounded-full bg-brand-500" />
-          )}
-        </div>
-      </div>
-
-      <ChevronRight className="w-4 h-4 text-dark-muted flex-shrink-0 mt-1" />
-    </button>
-  )
-}
-
-// Message bubble component
-function MessageBubble({
-  message,
-  index,
-}: {
-  message: {
-    id: string
-    type: string
-    content: string
-    timestamp: Date
-    status?: string
-  }
-  index: number
-}) {
-  const isOutbound = message.type === 'outbound'
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: index * 0.05 }}
-      className={cn('flex', isOutbound ? 'justify-end' : 'justify-start')}
-    >
-      <div
-        className={cn(
-          'max-w-[70%] rounded-2xl px-4 py-2',
-          isOutbound
-            ? 'bg-brand-500 text-white rounded-tr-md'
-            : 'bg-dark-card border border-dark-border text-dark-text rounded-tl-md'
-        )}
+      {/* Archive Confirmation Modal */}
+      <Modal
+        isOpen={showArchiveModal}
+        onClose={() => setShowArchiveModal(false)}
+        title="Archivar conversación"
       >
-        <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-        <div
-          className={cn(
-            'flex items-center justify-end gap-1 mt-1',
-            isOutbound ? 'text-white/60' : 'text-dark-muted'
-          )}
-        >
-          <span className="text-xs">
-            {message.timestamp.toLocaleTimeString('es-AR', {
-              hour: '2-digit',
-              minute: '2-digit',
-            })}
-          </span>
-          {isOutbound && (
-            <span>
-              {message.status === 'read' ? (
-                <CheckCheck className="w-3 h-3" />
-              ) : (
-                <Check className="w-3 h-3" />
-              )}
-            </span>
-          )}
+        <div className="space-y-4">
+          <div className="flex items-start gap-3 p-4 rounded-lg bg-amber-500/10 border border-amber-500/20">
+            <Archive className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm text-dark-text font-medium">
+                ¿Archivar conversación con {actionLeadName}?
+              </p>
+              <p className="text-sm text-dark-muted mt-1">
+                La conversación se ocultará de tu inbox. Podés restaurarla desde la sección de archivados.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex gap-3">
+            <Button
+              variant="secondary"
+              className="flex-1"
+              onClick={() => setShowArchiveModal(false)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="primary"
+              className="flex-1"
+              onClick={archiveConversation}
+              leftIcon={<Archive className="w-4 h-4" />}
+            >
+              Archivar
+            </Button>
+          </div>
         </div>
-      </div>
-    </motion.div>
+      </Modal>
+
+      {/* Block Confirmation Modal */}
+      <Modal
+        isOpen={showBlockModal}
+        onClose={() => setShowBlockModal(false)}
+        title="Bloquear contacto"
+      >
+        <div className="space-y-4">
+          <div className="flex items-start gap-3 p-4 rounded-lg bg-red-500/10 border border-red-500/20">
+            <Ban className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm text-dark-text font-medium">
+                ¿Bloquear a {actionLeadName}?
+              </p>
+              <p className="text-sm text-dark-muted mt-1">
+                No podrás recibir más mensajes de este contacto hasta que lo desbloquees.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex gap-3">
+            <Button
+              variant="secondary"
+              className="flex-1"
+              onClick={() => setShowBlockModal(false)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="danger"
+              className="flex-1"
+              onClick={blockContact}
+              leftIcon={<Ban className="w-4 h-4" />}
+            >
+              Bloquear
+            </Button>
+          </div>
+        </div>
+      </Modal>
+    </div>
   )
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { google } from 'googleapis'
 import { prisma } from '@/lib/prisma'
+import { getBaseUrl } from '@/lib/url'
 
 // GET /api/gmail/callback - Handle Google OAuth callback
 export async function GET(req: NextRequest) {
@@ -26,7 +27,7 @@ export async function GET(req: NextRequest) {
     const oauth2Client = new google.auth.OAuth2(
       process.env.GOOGLE_CLIENT_ID,
       process.env.GOOGLE_CLIENT_SECRET,
-      `${process.env.NEXTAUTH_URL}/api/gmail/callback`
+      `${getBaseUrl()}/api/gmail/callback`
     )
 
     // Exchange code for tokens

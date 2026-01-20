@@ -106,8 +106,6 @@ function ChannelsSettings() {
     instanceName: '',
   })
   const [showEvolutionKey, setShowEvolutionKey] = useState(false)
-  const [showQRModal, setShowQRModal] = useState(false)
-  const [qrCode, setQrCode] = useState<string | null>(null)
 
   // Check Gmail OAuth result from URL params
   useEffect(() => {
@@ -134,20 +132,48 @@ function ChannelsSettings() {
     },
   })
 
+  // Fetch Evolution status
+  const { data: evolutionStatus, isLoading: isLoadingEvolution } = useQuery({
+    queryKey: ['evolution-status'],
+    queryFn: async () => {
+      const response = await fetch('/api/evolution/status')
+      if (!response.ok) throw new Error('Error fetching Evolution status')
+      return response.json()
+    },
+  })
+
   // Connect Evolution mutation
   const connectEvolutionMutation = useMutation({
     mutationFn: async () => {
-      // In real app, call API to get QR code
-      await new Promise((resolve) => setTimeout(resolve, 1000))
-      return { qrCode: 'demo-qr-code' }
+      const response = await fetch('/api/evolution/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          serverUrl: evolutionConfig.serverUrl,
+          apiKey: evolutionConfig.apiKey,
+          instanceName: evolutionConfig.instanceName,
+        }),
+      })
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || 'Error al conectar Evolution API')
+      }
+      return response.json()
     },
     onSuccess: (data) => {
-      setQrCode(data.qrCode)
-      setShowQRModal(true)
-      toast.success('QR generado. Escaneá con WhatsApp.')
+      if (data.alreadyConnected) {
+        // Instance already connected, no QR needed
+        toast.success('¡WhatsApp ya está conectado!')
+        queryClient.invalidateQueries({ queryKey: ['evolution-status'] })
+      } else if (data.error) {
+        toast.error(data.error)
+      } else {
+        toast.success('Configuración guardada')
+        queryClient.invalidateQueries({ queryKey: ['evolution-status'] })
+      }
     },
-    onError: () => {
-      toast.error('Error al conectar Evolution API')
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Error al conectar Evolution API')
     },
   })
 
@@ -186,7 +212,24 @@ function ChannelsSettings() {
     },
   })
 
+  // Disconnect Evolution mutation
+  const disconnectEvolutionMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch('/api/evolution/status', { method: 'DELETE' })
+      if (!response.ok) throw new Error('Error disconnecting Evolution')
+      return response.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['evolution-status'] })
+      toast.success('WhatsApp desconectado')
+    },
+    onError: () => {
+      toast.error('Error al desconectar WhatsApp')
+    },
+  })
+
   const isGmailConnected = gmailStatus?.connected === true
+  const isEvolutionConnected = evolutionStatus?.connected === true
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -200,92 +243,131 @@ function ChannelsSettings() {
             <h3 className="font-semibold text-dark-text">WhatsApp</h3>
             <p className="text-sm text-dark-muted">Evolution API v2</p>
           </div>
-          <Badge variant="warning" className="ml-auto">
-            No conectado
-          </Badge>
+          {isLoadingEvolution ? (
+            <Loader2 className="w-4 h-4 animate-spin text-dark-muted ml-auto" />
+          ) : (
+            <Badge
+              variant={isEvolutionConnected ? 'success' : 'warning'}
+              className="ml-auto"
+            >
+              {isEvolutionConnected ? 'Conectado' : 'No conectado'}
+            </Badge>
+          )}
         </div>
 
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-dark-muted mb-2">
-              URL del servidor Evolution
-            </label>
-            <Input
-              placeholder="https://evolution.tuserver.com"
-              value={evolutionConfig.serverUrl}
-              onChange={(e) =>
-                setEvolutionConfig({ ...evolutionConfig, serverUrl: e.target.value })
-              }
-              icon={<Globe className="w-4 h-4" />}
-            />
-          </div>
+        {isEvolutionConnected ? (
+          <div className="space-y-4">
+            <div className="p-4 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+              <div className="flex items-center gap-2 text-emerald-400">
+                <CheckCircle className="w-5 h-5" />
+                <span className="font-medium">WhatsApp conectado correctamente</span>
+              </div>
+              <div className="mt-3 space-y-1">
+                <p className="text-sm text-dark-muted">
+                  Instancia: <span className="text-dark-text">{evolutionStatus.instance}</span>
+                </p>
+                <p className="text-sm text-dark-muted">
+                  Servidor: <span className="text-dark-text">{evolutionStatus.baseUrl}</span>
+                </p>
+                <p className="text-sm text-dark-muted">
+                  Estado: <span className="text-emerald-400 capitalize">{evolutionStatus.state}</span>
+                </p>
+              </div>
+            </div>
 
-          <div>
-            <label className="block text-sm font-medium text-dark-muted mb-2">
-              API Key
-            </label>
-            <div className="relative">
+            <Button
+              variant="danger"
+              className="w-full"
+              onClick={() => disconnectEvolutionMutation.mutate()}
+              isLoading={disconnectEvolutionMutation.isPending}
+              leftIcon={<Trash2 className="w-4 h-4" />}
+            >
+              Desconectar WhatsApp
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-dark-muted mb-2">
+                URL del servidor Evolution
+              </label>
               <Input
-                type={showEvolutionKey ? 'text' : 'password'}
-                placeholder="Tu API key de Evolution"
-                value={evolutionConfig.apiKey}
+                placeholder="https://evolution.tuserver.com"
+                value={evolutionConfig.serverUrl}
                 onChange={(e) =>
-                  setEvolutionConfig({ ...evolutionConfig, apiKey: e.target.value })
+                  setEvolutionConfig({ ...evolutionConfig, serverUrl: e.target.value })
                 }
-                icon={<Key className="w-4 h-4" />}
+                icon={<Globe className="w-4 h-4" />}
               />
-              <button
-                type="button"
-                onClick={() => setShowEvolutionKey(!showEvolutionKey)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-dark-muted hover:text-dark-text"
-              >
-                {showEvolutionKey ? (
-                  <EyeOff className="w-4 h-4" />
-                ) : (
-                  <Eye className="w-4 h-4" />
-                )}
-              </button>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-dark-muted mb-2">
+                API Key
+              </label>
+              <div className="relative">
+                <Input
+                  type={showEvolutionKey ? 'text' : 'password'}
+                  placeholder="Tu API key de Evolution"
+                  value={evolutionConfig.apiKey}
+                  onChange={(e) =>
+                    setEvolutionConfig({ ...evolutionConfig, apiKey: e.target.value })
+                  }
+                  icon={<Key className="w-4 h-4" />}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowEvolutionKey(!showEvolutionKey)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-dark-muted hover:text-dark-text"
+                >
+                  {showEvolutionKey ? (
+                    <EyeOff className="w-4 h-4" />
+                  ) : (
+                    <Eye className="w-4 h-4" />
+                  )}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-dark-muted mb-2">
+                Nombre de instancia
+              </label>
+              <Input
+                placeholder="mi-instancia"
+                value={evolutionConfig.instanceName}
+                onChange={(e) =>
+                  setEvolutionConfig({ ...evolutionConfig, instanceName: e.target.value })
+                }
+                icon={<Smartphone className="w-4 h-4" />}
+              />
+            </div>
+
+            <Button
+              variant="primary"
+              className="w-full"
+              onClick={() => connectEvolutionMutation.mutate()}
+              isLoading={connectEvolutionMutation.isPending}
+              leftIcon={<QrCode className="w-4 h-4" />}
+            >
+              Conectar WhatsApp
+            </Button>
+
+            <div className="p-3 rounded-lg bg-dark-hover">
+              <p className="text-xs text-dark-muted">
+                <strong>¿No tenés Evolution API?</strong>{' '}
+                <a
+                  href="https://doc.evolution-api.com"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-brand-400 hover:underline"
+                >
+                  Seguí esta guía para instalarlo
+                </a>
+              </p>
             </div>
           </div>
-
-          <div>
-            <label className="block text-sm font-medium text-dark-muted mb-2">
-              Nombre de instancia
-            </label>
-            <Input
-              placeholder="mi-instancia"
-              value={evolutionConfig.instanceName}
-              onChange={(e) =>
-                setEvolutionConfig({ ...evolutionConfig, instanceName: e.target.value })
-              }
-              icon={<Smartphone className="w-4 h-4" />}
-            />
-          </div>
-
-          <Button
-            variant="primary"
-            className="w-full"
-            onClick={() => connectEvolutionMutation.mutate()}
-            isLoading={connectEvolutionMutation.isPending}
-            leftIcon={<QrCode className="w-4 h-4" />}
-          >
-            Generar QR y Conectar
-          </Button>
-
-          <div className="p-3 rounded-lg bg-dark-hover">
-            <p className="text-xs text-dark-muted">
-              <strong>¿No tenés Evolution API?</strong>{' '}
-              <a
-                href="https://doc.evolution-api.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-brand-400 hover:underline"
-              >
-                Seguí esta guía para instalarlo
-              </a>
-            </p>
-          </div>
-        </div>
+        )}
       </Card>
 
       {/* Gmail */}
@@ -367,44 +449,6 @@ function ChannelsSettings() {
           </div>
         )}
       </Card>
-
-      {/* QR Modal */}
-      <Modal
-        isOpen={showQRModal}
-        onClose={() => setShowQRModal(false)}
-        title="Escanear código QR"
-      >
-        <div className="text-center space-y-4">
-          <div className="w-64 h-64 mx-auto bg-white rounded-lg flex items-center justify-center">
-            {qrCode ? (
-              <div className="text-dark-bg">
-                <QrCode className="w-32 h-32" />
-                <p className="text-sm mt-2">Demo QR Code</p>
-              </div>
-            ) : (
-              <RefreshCw className="w-8 h-8 text-dark-muted animate-spin" />
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <p className="text-dark-text">
-              Abrí WhatsApp en tu celular y escaneá este código
-            </p>
-            <p className="text-sm text-dark-muted">
-              Configuración → Dispositivos vinculados → Vincular un dispositivo
-            </p>
-          </div>
-
-          <Button
-            variant="secondary"
-            className="w-full"
-            onClick={() => connectEvolutionMutation.mutate()}
-            leftIcon={<RefreshCw className="w-4 h-4" />}
-          >
-            Regenerar QR
-          </Button>
-        </div>
-      </Modal>
     </div>
   )
 }

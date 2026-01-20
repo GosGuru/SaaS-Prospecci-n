@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/prisma'
 import { getDefaultWhatsAppClient, createWhatsAppClient, WhatsAppClient } from '@/lib/whatsapp'
+import { createEvolutionClient, getDefaultEvolutionClient } from '@/lib/evolution'
 import { replaceTemplateVariables } from '@/lib/gmail'
 
 const DEMO_MODE = process.env.DEMO_MODE === 'true'
@@ -14,7 +15,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json()
-    const { leadId, message, templateName, workspaceId } = body
+    let { leadId, message, templateName, workspaceId } = body
 
     if (!leadId || (!message && !templateName)) {
       return NextResponse.json(
@@ -30,6 +31,11 @@ export async function POST(req: NextRequest) {
 
     if (!lead) {
       return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
+    }
+
+    // If no workspaceId provided, get it from lead
+    if (!workspaceId) {
+      workspaceId = lead.workspaceId
     }
 
     if (!lead.phone) {
@@ -97,6 +103,8 @@ export async function POST(req: NextRequest) {
 
     // Get WhatsApp client
     let whatsappClient: WhatsAppClient | null = null
+    let evolutionClient = getDefaultEvolutionClient()
+    let isEvolution = false
 
     // Try workspace-specific config first
     if (workspaceId) {
@@ -111,26 +119,40 @@ export async function POST(req: NextRequest) {
 
       if (channelConfig?.isActive && channelConfig.config) {
         const config = channelConfig.config as {
-          phoneNumberId: string
-          accessToken: string
+          provider?: string
+          baseUrl?: string
+          apiKey?: string
+          instance?: string
+          phoneNumberId?: string
+          accessToken?: string
           businessAccountId?: string
         }
-        whatsappClient = createWhatsAppClient({
-          phoneNumberId: config.phoneNumberId,
-          accessToken: config.accessToken,
-          businessAccountId: config.businessAccountId,
-        })
+
+        if (config.provider === 'evolution' && config.baseUrl && config.apiKey && config.instance) {
+          evolutionClient = createEvolutionClient({
+            baseUrl: config.baseUrl,
+            apiKey: config.apiKey,
+            instance: config.instance,
+          })
+          isEvolution = true
+        } else if (config.phoneNumberId && config.accessToken) {
+          whatsappClient = createWhatsAppClient({
+            phoneNumberId: config.phoneNumberId,
+            accessToken: config.accessToken,
+            businessAccountId: config.businessAccountId,
+          })
+        }
       }
     }
 
     // Fall back to default config
-    if (!whatsappClient) {
+    if (!whatsappClient && !evolutionClient) {
       whatsappClient = getDefaultWhatsAppClient()
     }
 
-    if (!whatsappClient) {
+    if (!whatsappClient && !evolutionClient) {
       return NextResponse.json(
-        { error: 'WhatsApp not configured. Set up WhatsApp Business API in settings.' },
+        { error: 'WhatsApp not configured. Set up Evolution API in settings.' },
         { status: 400 }
       )
     }
@@ -150,22 +172,37 @@ export async function POST(req: NextRequest) {
       let result
 
       // Send template or text message
-      if (templateName) {
-        // For first-time contact or business-initiated messages, use templates
-        result = await whatsappClient.sendTemplate({
-          to: lead.phone,
-          templateName: templateName,
-          languageCode: 'es', // Spanish by default, could be configurable
+      if (isEvolution && evolutionClient) {
+        if (templateName) {
+          return NextResponse.json(
+            { error: 'Evolution API no soporta plantillas. Enviá texto simple.' },
+            { status: 400 }
+          )
+        }
+        result = await evolutionClient.sendText({
+          number: lead.phone,
+          text: processedMessage,
         })
-      } else {
-        // Send regular text message (only works within 24hr window)
-        result = await whatsappClient.sendText({
-          to: lead.phone,
-          message: processedMessage,
-        })
+      } else if (whatsappClient) {
+        if (templateName) {
+          // For first-time contact or business-initiated messages, use templates
+          result = await whatsappClient.sendTemplate({
+            to: lead.phone,
+            templateName: templateName,
+            languageCode: 'es', // Spanish by default, could be configurable
+          })
+        } else {
+          // Send regular text message (only works within 24hr window)
+          result = await whatsappClient.sendText({
+            to: lead.phone,
+            message: processedMessage,
+          })
+        }
       }
 
-      const messageId = result.messages?.[0]?.id
+      const messageId = isEvolution
+        ? (result as any)?.key?.id
+        : (result as any)?.messages?.[0]?.id
 
       // Update message with result
       await prisma.outboundMessage.update({
@@ -215,7 +252,7 @@ export async function POST(req: NextRequest) {
         success: true,
         messageId: outboundMessage.id,
         providerMsgId: messageId,
-        waId: result.contacts?.[0]?.wa_id,
+        waId: (result as any)?.contacts?.[0]?.wa_id,
       })
     } catch (sendError: unknown) {
       const errorMessage = sendError instanceof Error ? sendError.message : 'Unknown error'

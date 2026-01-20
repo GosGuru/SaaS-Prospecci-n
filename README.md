@@ -48,6 +48,21 @@ CRM de prospección inteligente con integración de Google Maps, WhatsApp y Emai
 - Cuenta de Google Cloud (para Places API y Gmail API)
 - Evolution API (para WhatsApp) - opcional
 
+## ⚙️ Variables de Entorno
+
+### Archivos de configuración:
+- `.env.example` - Template con todas las variables disponibles
+- `.env.local.example` - Template para desarrollo local
+- `.env.local` - **TU archivo local** (copiá de `.env.local.example` y completá)
+- `.env` - Configuración base (gitignored)
+
+**⚠️ Importante:**
+- `.env.local` **NO se commitea** (está en .gitignore)
+- Copiá `.env.local.example` a `.env.local` y completá tus valores
+- Para **WhatsApp/Evolution**, configurá en la UI (Settings → Canales) en vez de `.env.local`
+
+Ver [WHATSAPP_SETUP.md](./WHATSAPP_SETUP.md) para más detalles sobre WhatsApp.
+
 ## 🔧 Instalación
 
 ### 1. Clonar el repositorio

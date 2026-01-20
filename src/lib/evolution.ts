@@ -37,9 +37,10 @@ interface EvolutionResponse {
 }
 
 interface InstanceStatus {
-  instance: string
-  state: 'open' | 'close' | 'connecting'
-  status: string
+  instance: {
+    instanceName: string
+    state: 'open' | 'close' | 'connecting'
+  }
 }
 
 export class EvolutionClient {
@@ -64,22 +65,28 @@ export class EvolutionClient {
    * Check instance connection status
    */
   async getInstanceStatus(): Promise<InstanceStatus> {
+    const url = `${this.config.baseUrl}/instance/connectionState/${this.config.instance}`
+    console.log('[EvolutionClient] getInstanceStatus - URL:', url)
+    
     try {
-      const response = await fetch(
-        `${this.config.baseUrl}/instance/connectionState/${this.config.instance}`,
-        {
-          method: 'GET',
-          headers: this.headers,
-        }
-      )
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: this.headers,
+      })
+
+      console.log('[EvolutionClient] getInstanceStatus - Response status:', response.status)
 
       if (!response.ok) {
-        throw new Error(`Failed to get instance status: ${response.statusText}`)
+        const errorText = await response.text()
+        console.error('[EvolutionClient] getInstanceStatus - Error response:', errorText)
+        throw new Error(`Failed to get instance status (${response.status}): ${errorText}`)
       }
 
-      return await response.json()
+      const data = await response.json()
+      console.log('[EvolutionClient] getInstanceStatus - Data:', data)
+      return data
     } catch (error) {
-      console.error('Evolution API - getInstanceStatus error:', error)
+      console.error('[EvolutionClient] getInstanceStatus - Exception:', error)
       throw error
     }
   }
@@ -155,22 +162,28 @@ export class EvolutionClient {
    * Get QR code for instance connection
    */
   async getQRCode(): Promise<{ base64: string; code: string }> {
+    const url = `${this.config.baseUrl}/instance/connect/${this.config.instance}`
+    console.log('[EvolutionClient] getQRCode - URL:', url)
+    
     try {
-      const response = await fetch(
-        `${this.config.baseUrl}/instance/connect/${this.config.instance}`,
-        {
-          method: 'GET',
-          headers: this.headers,
-        }
-      )
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: this.headers,
+      })
+
+      console.log('[EvolutionClient] getQRCode - Response status:', response.status)
 
       if (!response.ok) {
-        throw new Error(`Failed to get QR code: ${response.statusText}`)
+        const errorText = await response.text()
+        console.error('[EvolutionClient] getQRCode - Error response:', errorText)
+        throw new Error(`Failed to get QR code (${response.status}): ${errorText}`)
       }
 
-      return await response.json()
+      const data = await response.json()
+      console.log('[EvolutionClient] getQRCode - QR received, has base64:', !!data.base64)
+      return data
     } catch (error) {
-      console.error('Evolution API - getQRCode error:', error)
+      console.error('[EvolutionClient] getQRCode - Exception:', error)
       throw error
     }
   }

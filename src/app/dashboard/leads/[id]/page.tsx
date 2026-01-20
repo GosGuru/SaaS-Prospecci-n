@@ -27,6 +27,7 @@ import {
   Paperclip,
   ChevronDown,
   Plus,
+  Loader2,
 } from 'lucide-react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
@@ -143,6 +144,15 @@ export default function LeadDetailPage() {
     },
   })
 
+  const { data: enrichmentData } = useQuery({
+    queryKey: ['enrichment', leadId],
+    queryFn: async () => {
+      const response = await fetch(`/api/enrichment?leadId=${leadId}`)
+      if (!response.ok) throw new Error('Error fetching enrichment')
+      return response.json() as Promise<{ job: { status: string; result?: { emails?: string[] } } | null }>
+    },
+  })
+
   const lead = leadData || DEMO_LEAD
   const activities = leadData?.activities || DEMO_ACTIVITIES
   const stages = leadData?.stages || DEMO_STAGES
@@ -223,6 +233,29 @@ export default function LeadDetailPage() {
     },
     onError: () => {
       toast.error('Error al enviar mensaje')
+    },
+  })
+
+  const runEnrichmentMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch('/api/enrichment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ leadId }),
+      })
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || 'Error al ejecutar enriquecimiento')
+      }
+      return response.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['lead', leadId] })
+      queryClient.invalidateQueries({ queryKey: ['enrichment', leadId] })
+      toast.success('Enriquecimiento ejecutado')
+    },
+    onError: () => {
+      toast.error('No se pudo enriquecer el email')
     },
   })
 
@@ -446,6 +479,32 @@ export default function LeadDetailPage() {
                   <Mail className="w-5 h-5 text-brand-400" />
                   <span className="text-dark-text">{lead.email}</span>
                 </a>
+              )}
+              {!lead.email && (
+                <div className="p-2 rounded-lg bg-dark-hover/50 space-y-2">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => runEnrichmentMutation.mutate()}
+                    disabled={!lead.website || runEnrichmentMutation.isPending}
+                    leftIcon={
+                      runEnrichmentMutation.isPending ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : undefined
+                    }
+                  >
+                    Buscar email
+                  </Button>
+                  <p className="text-xs text-dark-muted">
+                    {!lead.website
+                      ? 'Agregá un sitio web para ejecutar el scraping.'
+                      : enrichmentData?.job?.status === 'FAILED'
+                      ? 'No se encontró email en el sitio web.'
+                      : enrichmentData?.job?.status === 'RUNNING'
+                      ? 'Enriqueciendo en curso...'
+                      : 'Usa scraping del sitio web.'}
+                  </p>
+                </div>
               )}
               {lead.website ? (
                 <a
@@ -726,7 +785,7 @@ function ComposeView({
   const templates = [
     {
       name: 'Presentación',
-      content: `¡Hola! Soy de [Tu Empresa]. Encontré ${lead.name} y me gustaría conversar sobre cómo podríamos ayudarlos a tener presencia online con un sitio web profesional.`,
+      content: `¡Hola! Soy Máximo. Vi ${lead.businessName || lead.name} y me encantaría ayudarlos a mejorar su presencia digital. ¿Tenés 5 minutos para charlar?`,
     },
     {
       name: 'Seguimiento',

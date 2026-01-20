@@ -29,6 +29,7 @@
     "clsx": "^2.1.1",
     "date-fns": "^3.6.0",
     "dotenv": "^17.2.3",
+    "emoji-picker-react": "^4.16.1",
     "framer-motion": "^12.27.0",
     "googleapis": "^170.1.0",
     "lodash": "^4.17.21",

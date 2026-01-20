@@ -95,6 +95,7 @@ model Workspace {
   channelConfigs  ChannelConfig[]
   oauthTokens     OAuthToken[]
   auditLogs       AuditLog[]
+  enrichmentJobs  EnrichmentJob[]
 
   @@map("workspaces")
 }
@@ -155,6 +156,10 @@ model Lead {
   source          LeadSource  @default(MANUAL)
   notes           String?     @db.Text
   
+  // Inbox Management
+  archived        Boolean     @default(false)
+  blocked         Boolean     @default(false)
+  
   // Timestamps
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
@@ -176,12 +181,41 @@ model Lead {
   inboundMessages  InboundMessage[]
   campaignMembers  CampaignMember[]
   stageHistory     LeadStageHistory[]
+  enrichmentJobs   EnrichmentJob[]
 
   @@index([workspaceId])
   @@index([placeId])
   @@index([email])
   @@index([phone])
   @@map("leads")
+}
+
+enum EnrichmentStatus {
+  PENDING
+  RUNNING
+  SUCCESS
+  FAILED
+}
+
+model EnrichmentJob {
+  id          String            @id @default(cuid())
+  leadId      String
+  workspaceId String
+  status      EnrichmentStatus  @default(PENDING)
+  source      String            @default("website_scrape")
+  result      Json?
+  error       String?           @db.Text
+  startedAt   DateTime?
+  finishedAt  DateTime?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  lead        Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([leadId])
+  @@index([workspaceId])
+  @@map("enrichment_jobs")
 }
 
 enum LeadStatus {
