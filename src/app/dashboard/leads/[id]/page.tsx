@@ -117,6 +117,8 @@ interface LeadWithDetails extends Lead {
   opportunityType?: 'new_website' | 'redesign' | 'low_priority'
   redesignPotential?: number
   redesignReason?: string
+  hasWhatsapp?: boolean | null
+  whatsappCheckedAt?: Date | null
 }
 
 export default function LeadDetailPage() {
@@ -256,6 +258,33 @@ export default function LeadDetailPage() {
     },
     onError: () => {
       toast.error('No se pudo enriquecer el email')
+    },
+  })
+
+  // Check WhatsApp mutation
+  const checkWhatsappMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch('/api/whatsapp/check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ leadId }),
+      })
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || 'Error al verificar WhatsApp')
+      }
+      return response.json() as Promise<{ hasWhatsapp: boolean; phone: string; stageChanged?: boolean }>
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['lead', leadId] })
+      if (data.hasWhatsapp) {
+        toast.success('✓ Este número tiene WhatsApp')
+      } else {
+        toast.error('✗ Sin WhatsApp - Movido a etapa "Sin WhatsApp"')
+      }
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Error al verificar')
     },
   })
 
@@ -463,13 +492,58 @@ export default function LeadDetailPage() {
             <h3 className="text-sm font-medium text-dark-muted mb-3">Información de Contacto</h3>
             <div className="space-y-3">
               {lead.phone && (
-                <a
-                  href={`tel:${lead.phone}`}
-                  className="flex items-center gap-3 p-2 rounded-lg hover:bg-dark-hover transition-colors"
-                >
-                  <Phone className="w-5 h-5 text-brand-400" />
-                  <span className="text-dark-text">{lead.phone}</span>
-                </a>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <a
+                      href={`tel:${lead.phone}`}
+                      className="flex-1 flex items-center gap-3 p-2 rounded-lg hover:bg-dark-hover transition-colors"
+                    >
+                      <Phone className="w-5 h-5 text-brand-400" />
+                      <span className="text-dark-text">{lead.phone}</span>
+                    </a>
+                    <a
+                      href={`https://wa.me/${lead.phone.replace(/[^0-9]/g, '')}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title="Abrir en WhatsApp Web"
+                      className="p-2 rounded-lg bg-green-500/10 hover:bg-green-500/20 transition-colors"
+                    >
+                      <MessageCircle className="w-5 h-5 text-green-400" />
+                    </a>
+                  </div>
+                  {/* WhatsApp status indicator */}
+                  <div className="flex items-center gap-2 px-2">
+                    {leadData?.hasWhatsapp === true ? (
+                      <div className="flex items-center gap-1.5 text-xs text-green-400">
+                        <CheckCircle className="w-3.5 h-3.5" />
+                        <span>Tiene WhatsApp</span>
+                      </div>
+                    ) : leadData?.hasWhatsapp === false ? (
+                      <div className="flex items-center gap-1.5 text-xs text-red-400">
+                        <XCircle className="w-3.5 h-3.5" />
+                        <span>No tiene WhatsApp</span>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => checkWhatsappMutation.mutate()}
+                        disabled={checkWhatsappMutation.isPending}
+                        className="flex items-center gap-1.5 text-xs text-dark-muted hover:text-brand-400 transition-colors"
+                      >
+                        {checkWhatsappMutation.isPending ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            <span>Verificando...</span>
+                          </>
+                        ) : (
+                          <>
+                            <AlertCircle className="w-3.5 h-3.5" />
+                            <span>Verificar si tiene WhatsApp</span>
+                          </>
+                        )}
+                      </button>
+                    )}
+                  </div>
+                </div>
               )}
               {lead.email && (
                 <a
@@ -754,6 +828,15 @@ function TimelineView({ activities }: { activities: Activity[] }) {
   )
 }
 
+// AI Template types
+type AITemplate = 'presentacion' | 'seguimiento' | 'sin_web'
+
+const AI_TEMPLATE_LABELS: Record<AITemplate, string> = {
+  presentacion: 'Presentación',
+  seguimiento: 'Seguimiento',
+  sin_web: 'Sin web',
+}
+
 // Compose view component
 interface ComposeViewProps {
   lead: Lead
@@ -778,24 +861,47 @@ function ComposeView({
   onSend,
   isSending,
 }: ComposeViewProps) {
+  const [generatingTemplate, setGeneratingTemplate] = useState<AITemplate | null>(null)
   const hasPhone = !!lead.phone
   const hasEmail = !!lead.email
 
-  // Template messages
-  const templates = [
-    {
-      name: 'Presentación',
-      content: `¡Hola! Soy Máximo. Vi ${lead.businessName || lead.name} y me encantaría ayudarlos a mejorar su presencia digital. ¿Tenés 5 minutos para charlar?`,
-    },
-    {
-      name: 'Seguimiento',
-      content: `¡Hola de nuevo! Quería saber si tuvieron tiempo de pensar sobre nuestra propuesta para crear el sitio web de ${lead.name}. ¿Tienen alguna consulta?`,
-    },
-    {
-      name: 'Sin web',
-      content: `¡Hola! Noté que ${lead.name} todavía no tiene sitio web. Hoy en día, tener presencia online es fundamental. ¿Te gustaría que conversemos sobre cómo podemos ayudarlos?`,
-    },
-  ]
+  // Generate AI message handler
+  const handleGenerateMessage = async (template: AITemplate) => {
+    setGeneratingTemplate(template)
+    
+    try {
+      const response = await fetch('/api/ai/generate-message', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          leadId: lead.id,
+          template,
+          channel,
+        }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Error al generar mensaje')
+      }
+
+      // Update content with AI-generated message
+      onContentChange(data.message)
+      
+      // If email channel and subject was generated, update it
+      if (channel === 'email' && data.subject) {
+        onSubjectChange(data.subject)
+      }
+
+      toast.success('Mensaje generado con IA')
+    } catch (error) {
+      console.error('[AI Generate] Error:', error)
+      toast.error(error instanceof Error ? error.message : 'Error al generar mensaje')
+    } finally {
+      setGeneratingTemplate(null)
+    }
+  }
 
   return (
     <Card className="p-6">
@@ -854,17 +960,30 @@ function ComposeView({
         </div>
       )}
 
-      {/* Templates */}
+      {/* AI Message Generation */}
       <div className="mb-4">
-        <p className="text-sm text-dark-muted mb-2">Plantillas rápidas:</p>
+        <p className="text-sm text-dark-muted mb-2">Generar con IA:</p>
         <div className="flex flex-wrap gap-2">
-          {templates.map((template) => (
+          {(Object.keys(AI_TEMPLATE_LABELS) as AITemplate[]).map((template) => (
             <button
-              key={template.name}
-              onClick={() => onContentChange(template.content)}
-              className="px-3 py-1.5 rounded-full bg-dark-hover text-dark-muted hover:text-dark-text text-sm transition-colors"
+              key={template}
+              onClick={() => handleGenerateMessage(template)}
+              disabled={generatingTemplate !== null}
+              className={cn(
+                "px-3 py-1.5 rounded-full text-sm transition-colors flex items-center gap-2",
+                generatingTemplate === template
+                  ? "bg-brand-500/20 text-brand-400 border border-brand-500/50"
+                  : "bg-dark-hover text-dark-muted hover:text-dark-text hover:bg-dark-hover/80"
+              )}
             >
-              {template.name}
+              {generatingTemplate === template ? (
+                <>
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  Generando...
+                </>
+              ) : (
+                AI_TEMPLATE_LABELS[template]
+              )}
             </button>
           ))}
         </div>

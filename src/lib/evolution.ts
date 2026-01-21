@@ -222,6 +222,53 @@ export class EvolutionClient {
   }
 
   /**
+   * Check if a phone number has WhatsApp
+   * Uses Evolution API's onWhatsApp endpoint
+   */
+  async checkNumberExists(phone: string): Promise<{ exists: boolean; jid?: string }> {
+    try {
+      const formattedNumber = this.formatPhoneNumber(phone)
+      
+      const url = `${this.config.baseUrl}/chat/whatsappNumbers/${this.config.instance}`
+      const requestBody = {
+        numbers: [formattedNumber],
+      }
+      
+      console.log('[EvolutionClient] checkNumberExists - URL:', url)
+      console.log('[EvolutionClient] checkNumberExists - Body:', JSON.stringify(requestBody))
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: this.headers,
+        body: JSON.stringify(requestBody),
+      })
+
+      console.log('[EvolutionClient] checkNumberExists - Response status:', response.status)
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error('[EvolutionClient] checkNumberExists - Error response:', errorText)
+        throw new Error(`Failed to check number: ${response.statusText}`)
+      }
+
+      const result = await response.json()
+      console.log('[EvolutionClient] checkNumberExists - Result:', result)
+      
+      // Evolution API returns array of results
+      // Format: [{ exists: true/false, jid: "number@s.whatsapp.net", number: "number" }]
+      const numberResult = result?.[0] || result
+      
+      return {
+        exists: numberResult?.exists === true,
+        jid: numberResult?.jid,
+      }
+    } catch (error) {
+      console.error('Evolution API - checkNumberExists error:', error)
+      throw error
+    }
+  }
+
+  /**
    * Map Evolution status to our internal status
    */
   static mapStatus(evolutionStatus: string): MessageStatus {

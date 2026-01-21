@@ -155,6 +155,8 @@ model Lead {
   webProbability  Int         @default(0) // 0-100 probability they need a website
   source          LeadSource  @default(MANUAL)
   notes           String?     @db.Text
+  hasWhatsapp     Boolean?    // null = not checked, true = has WhatsApp, false = no WhatsApp
+  whatsappCheckedAt DateTime? // When the WhatsApp check was last performed
   
   // Inbox Management
   archived        Boolean     @default(false)

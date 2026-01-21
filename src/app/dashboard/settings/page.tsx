@@ -455,10 +455,65 @@ function ChannelsSettings() {
 
 // Pipeline settings component
 function PipelineSettings() {
-  const [stages, setStages] = useState<PipelineStage[]>(INITIAL_STAGES)
+  const queryClient = useQueryClient()
+  const [stages, setStages] = useState<PipelineStage[]>([])
   const [editingStage, setEditingStage] = useState<PipelineStage | null>(null)
   const [newStageName, setNewStageName] = useState('')
   const [newStageColor, setNewStageColor] = useState('#6366f1')
+  const [hasChanges, setHasChanges] = useState(false)
+
+  // Fetch pipeline stages from API
+  const { data: pipelineData, isLoading: isLoadingPipeline } = useQuery({
+    queryKey: ['pipeline-stages'],
+    queryFn: async () => {
+      const response = await fetch('/api/workspace/pipeline')
+      if (!response.ok) throw new Error('Error fetching pipeline stages')
+      return response.json() as Promise<{ workspaceId: string; stages: PipelineStage[] }>
+    },
+  })
+
+  // Initialize stages from API data
+  useEffect(() => {
+    if (pipelineData?.stages && pipelineData.stages.length > 0) {
+      setStages(pipelineData.stages)
+    } else if (pipelineData && pipelineData.stages.length === 0) {
+      // If no stages exist, use initial demo stages
+      setStages(INITIAL_STAGES)
+      setHasChanges(true) // Mark as having changes to prompt save
+    }
+  }, [pipelineData])
+
+  // Save pipeline stages mutation
+  const savePipelineMutation = useMutation({
+    mutationFn: async (stagesToSave: PipelineStage[]) => {
+      const response = await fetch('/api/workspace/pipeline', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          stages: stagesToSave.map((s, index) => ({
+            id: s.id.startsWith('new-') ? undefined : s.id,
+            name: s.name,
+            color: s.color,
+            order: index,
+          })),
+        }),
+      })
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || 'Error saving pipeline')
+      }
+      return response.json()
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['pipeline-stages'] })
+      setStages(data.stages)
+      setHasChanges(false)
+      toast.success('Pipeline guardado')
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Error al guardar pipeline')
+    },
+  })
 
   const colors = [
     '#6366f1', // Indigo
@@ -475,25 +530,45 @@ function PipelineSettings() {
     if (!newStageName.trim()) return
 
     const newStage: PipelineStage = {
-      id: Date.now().toString(),
+      id: `new-${Date.now()}`,
       name: newStageName,
       color: newStageColor,
       order: stages.length,
-      workspaceId: 'demo',
+      workspaceId: pipelineData?.workspaceId || 'pending',
     }
 
     setStages([...stages, newStage])
     setNewStageName('')
-    toast.success('Etapa agregada')
+    setHasChanges(true)
+    toast.success('Etapa agregada (guardá para confirmar)')
   }
 
   const deleteStage = (id: string) => {
     setStages(stages.filter((s) => s.id !== id))
-    toast.success('Etapa eliminada')
+    setHasChanges(true)
+    toast.success('Etapa eliminada (guardá para confirmar)')
   }
 
   const updateStage = (id: string, updates: Partial<PipelineStage>) => {
     setStages(stages.map((s) => (s.id === id ? { ...s, ...updates } : s)))
+    setHasChanges(true)
+  }
+
+  const handleSave = () => {
+    savePipelineMutation.mutate(stages)
+  }
+
+  if (isLoadingPipeline) {
+    return (
+      <div className="max-w-2xl">
+        <Card className="p-6">
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="w-6 h-6 animate-spin text-brand-400" />
+            <span className="ml-2 text-dark-muted">Cargando pipeline...</span>
+          </div>
+        </Card>
+      </div>
+    )
   }
 
   return (
@@ -586,10 +661,11 @@ function PipelineSettings() {
           <Button
             variant="primary"
             className="w-full"
-            leftIcon={<Save className="w-4 h-4" />}
-            onClick={() => toast.success('Pipeline guardado')}
+            leftIcon={savePipelineMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            onClick={handleSave}
+            disabled={!hasChanges || savePipelineMutation.isPending}
           >
-            Guardar cambios
+            {savePipelineMutation.isPending ? 'Guardando...' : hasChanges ? 'Guardar cambios' : 'Sin cambios'}
           </Button>
         </div>
       </Card>
