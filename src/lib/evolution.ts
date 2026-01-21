@@ -124,7 +124,12 @@ export class EvolutionClient {
         let errorMessage = `Failed to send message: ${response.statusText}`
         try {
           const errorJson = JSON.parse(errorText)
-          errorMessage = errorJson.message || errorJson.error || errorMessage
+          // Check if the error is about number not existing on WhatsApp
+          if (errorJson.response?.message?.[0]?.exists === false) {
+            errorMessage = `El número ${payload.number} no tiene cuenta de WhatsApp`
+          } else {
+            errorMessage = errorJson.message || errorJson.error || errorMessage
+          }
         } catch {}
         throw new Error(errorMessage)
       }
