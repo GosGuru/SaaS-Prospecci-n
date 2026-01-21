@@ -248,7 +248,7 @@ export async function POST(req: NextRequest) {
         detailsUrl.searchParams.set('key', GOOGLE_PLACES_API_KEY)
         detailsUrl.searchParams.set(
           'fields',
-          'name,formatted_address,formatted_phone_number,website,rating,user_ratings_total,price_level,types,geometry,opening_hours,photos,address_components'
+          'name,formatted_address,formatted_phone_number,international_phone_number,website,rating,user_ratings_total,price_level,types,geometry,opening_hours,photos,address_components'
         )
 
         const detailsResponse = await fetch(detailsUrl.toString())
@@ -304,7 +304,8 @@ export async function POST(req: NextRequest) {
           reviewCount: details.user_ratings_total,
           priceLevel: details.price_level,
           website: details.website,
-          phone: details.formatted_phone_number,
+          // Prefer international_phone_number (includes country code) over formatted_phone_number (local format)
+          phone: details.international_phone_number || details.formatted_phone_number,
           openingHours: details.opening_hours
             ? {
                 isOpen: details.opening_hours.open_now,
