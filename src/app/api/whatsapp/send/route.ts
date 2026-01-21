@@ -8,14 +8,18 @@ import { replaceTemplateVariables } from '@/lib/gmail'
 const DEMO_MODE = process.env.DEMO_MODE === 'true'
 
 export async function POST(req: NextRequest) {
+  console.log('[WhatsApp Send] Request received, DEMO_MODE:', DEMO_MODE)
+  
   try {
     const session = await auth()
     if (!session?.user) {
+      console.log('[WhatsApp Send] Unauthorized - no session')
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const body = await req.json()
     let { leadId, message, templateName, workspaceId } = body
+    console.log('[WhatsApp Send] Body:', { leadId, hasMessage: !!message, templateName, workspaceId })
 
     if (!leadId || (!message && !templateName)) {
       return NextResponse.json(
@@ -30,6 +34,7 @@ export async function POST(req: NextRequest) {
     })
 
     if (!lead) {
+      console.log('[WhatsApp Send] Lead not found:', leadId)
       return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
     }
 
@@ -37,6 +42,7 @@ export async function POST(req: NextRequest) {
     if (!workspaceId) {
       workspaceId = lead.workspaceId
     }
+    console.log('[WhatsApp Send] Using workspaceId:', workspaceId)
 
     if (!lead.phone) {
       return NextResponse.json(
@@ -108,6 +114,7 @@ export async function POST(req: NextRequest) {
 
     // Try workspace-specific config first
     if (workspaceId) {
+      console.log('[WhatsApp Send] Looking for ChannelConfig for workspace:', workspaceId)
       const channelConfig = await prisma.channelConfig.findUnique({
         where: {
           workspaceId_channel: {
@@ -115,6 +122,12 @@ export async function POST(req: NextRequest) {
             channel: 'WHATSAPP',
           },
         },
+      })
+      console.log('[WhatsApp Send] ChannelConfig found:', { 
+        found: !!channelConfig, 
+        isActive: channelConfig?.isActive,
+        hasConfig: !!channelConfig?.config,
+        provider: (channelConfig?.config as any)?.provider
       })
 
       if (channelConfig?.isActive && channelConfig.config) {
