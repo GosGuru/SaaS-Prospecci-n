@@ -147,8 +147,20 @@ const DEMO_LEADS: Lead[] = [
 ]
 
 export default function LeadsPage() {
-  const [viewMode, setViewMode] = useState<ViewMode>('table')
+  // Load view preference from localStorage
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('leads-view-mode')
+      return (saved === 'table' || saved === 'kanban') ? saved : 'table'
+    }
+    return 'table'
+  })
   const [searchQuery, setSearchQuery] = useState('')
+
+  // Save view preference when it changes
+  useEffect(() => {
+    localStorage.setItem('leads-view-mode', viewMode)
+  }, [viewMode])
   const [filters, setFilters] = useState({
     stage: '',
     source: '',
@@ -175,6 +187,7 @@ export default function LeadsPage() {
       return response.json()
     },
     staleTime: 1000 * 30, // 30 seconds
+    refetchOnWindowFocus: true, // Auto-refresh when coming back to the page
   })
 
   const deleteLeadsMutation = useMutation({

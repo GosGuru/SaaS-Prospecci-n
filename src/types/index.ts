@@ -29,10 +29,7 @@ export interface PlaceSearchResult {
 
 export interface PlaceSearchParams {
   query: string
-  location?: {
-    lat: number
-    lng: number
-  }
+  location?: string // Text location like "Buenos Aires, Argentina"
   radius?: number // in meters
   type?: string
   minRating?: number

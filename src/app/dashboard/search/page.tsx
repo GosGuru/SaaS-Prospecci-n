@@ -27,7 +27,7 @@ import { Badge } from '@/components/ui/badge'
 import { Modal } from '@/components/ui/modal'
 import { WebProbabilityBadge, ProbabilityBar } from '@/components/ui/web-probability'
 import { ProspectSearchSkeleton } from '@/components/ui/skeleton'
-import { cn, debounce } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import type { PlaceSearchResult, PlaceSearchParams } from '@/types'
 import toast from 'react-hot-toast'
 
@@ -52,7 +52,8 @@ const LOCATION_SUGGESTIONS = [
 ]
 
 export default function SearchPage() {
-  const [searchQuery, setSearchQuery] = useState('')
+  const [inputQuery, setInputQuery] = useState('') // Lo que escribe el usuario
+  const [searchQuery, setSearchQuery] = useState('') // Lo que dispara la búsqueda (solo con Enter)
   const [location, setLocation] = useState('')
   const [showFilters, setShowFilters] = useState(false)
   const [filters, setFilters] = useState({
@@ -72,10 +73,11 @@ export default function SearchPage() {
   } = useQuery({
     queryKey: ['places-search', searchQuery, location, filters],
     queryFn: async () => {
-      if (!searchQuery) return { results: [], total: 0, isDemo: true }
+      if (!searchQuery || !location) return { results: [], total: 0, isDemo: true }
 
       const params: PlaceSearchParams = {
-        query: location ? `${searchQuery} en ${location}` : searchQuery,
+        query: searchQuery,
+        location: location, // Enviar ubicación como campo separado
         minRating: filters.minRating || undefined,
         hasWebsite: filters.hasWebsite,
         hasPhone: filters.hasPhone || undefined,
@@ -93,7 +95,7 @@ export default function SearchPage() {
 
       return response.json()
     },
-    enabled: searchQuery.length > 0,
+    enabled: searchQuery.length > 0 && location.length > 0,
     staleTime: 1000 * 60 * 5, // 5 minutes
   })
 
@@ -121,16 +123,18 @@ export default function SearchPage() {
     },
   })
 
-  // Debounced search
-  const debouncedSearch = useCallback(
-    debounce((value: string) => {
-      setSearchQuery(value)
-    }, 500),
-    []
-  )
+  // Execute search - only called on Enter or button click
+  const executeSearch = useCallback(() => {
+    if (inputQuery.trim() && location.trim()) {
+      setSearchQuery(inputQuery.trim())
+    }
+  }, [inputQuery, location])
 
-  const handleSearch = (value: string) => {
-    debouncedSearch(value)
+  // Handle Enter key press
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      executeSearch()
+    }
   }
 
   const toggleSelectPlace = (placeId: string) => {
@@ -158,6 +162,7 @@ export default function SearchPage() {
   }
 
   const handleQuickSearch = (search: string) => {
+    setInputQuery(search)
     setSearchQuery(search)
   }
 
@@ -191,7 +196,9 @@ export default function SearchPage() {
             </label>
             <SearchInput
               placeholder="Ej: restaurantes, peluquerías, gimnasios..."
-              onChange={(e) => handleSearch(e.target.value)}
+              value={inputQuery}
+              onChange={(e) => setInputQuery(e.target.value)}
+              onKeyDown={handleKeyPress}
               className="h-12"
             />
           </div>
@@ -199,7 +206,7 @@ export default function SearchPage() {
           {/* Location input - free text */}
           <div className="w-full md:w-72">
             <label className="block text-sm font-medium text-dark-muted mb-2">
-              Ubicación (opcional)
+              Ubicación (obligatoria)
             </label>
             <div className="relative">
               <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-dark-muted" />
@@ -207,6 +214,7 @@ export default function SearchPage() {
                 type="text"
                 value={location}
                 onChange={(e) => setLocation(e.target.value)}
+                onKeyDown={handleKeyPress}
                 placeholder="Ej: Montevideo, Uruguay"
                 list="location-suggestions"
                 className="w-full h-12 pl-10 pr-4 rounded-lg border border-dark-border bg-dark-card text-dark-text placeholder:text-dark-muted focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500"
@@ -217,6 +225,19 @@ export default function SearchPage() {
                 ))}
               </datalist>
             </div>
+          </div>
+
+          {/* Search button */}
+          <div className="flex items-end">
+            <Button
+              variant="primary"
+              onClick={executeSearch}
+              disabled={!inputQuery.trim() || !location.trim() || isLoading}
+              leftIcon={isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+              className="h-12"
+            >
+              Buscar
+            </Button>
           </div>
 
           {/* Filters button */}
@@ -314,7 +335,7 @@ export default function SearchPage() {
         </AnimatePresence>
 
         {/* Quick search suggestions */}
-        {!searchQuery && (
+        {!inputQuery && (
           <div className="mt-6">
             <p className="text-sm text-dark-muted mb-3">Búsquedas populares:</p>
             <div className="flex flex-wrap gap-2">

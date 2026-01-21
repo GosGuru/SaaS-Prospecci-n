@@ -164,6 +164,23 @@ const DEMO_RESULTS: PlaceSearchResult[] = [
   },
 ]
 
+// Field mask for Places API v2 - get all fields we need in one call
+const FIELD_MASK = [
+  'places.id',
+  'places.displayName',
+  'places.formattedAddress',
+  'places.addressComponents',
+  'places.location',
+  'places.types',
+  'places.rating',
+  'places.userRatingCount',
+  'places.priceLevel',
+  'places.websiteUri',
+  'places.nationalPhoneNumber',
+  'places.internationalPhoneNumber',
+  'places.photos',
+].join(',')
+
 export async function POST(req: NextRequest) {
   try {
     const session = await auth()
@@ -172,10 +189,14 @@ export async function POST(req: NextRequest) {
     }
 
     const body: PlaceSearchParams = await req.json()
-    const { query, location, radius = 5000, type, minRating, hasWebsite } = body
+    const { query, location, minRating, hasWebsite } = body
 
     if (!query) {
       return NextResponse.json({ error: 'Query is required' }, { status: 400 })
+    }
+
+    if (!location) {
+      return NextResponse.json({ error: 'Location is required' }, { status: 400 })
     }
 
     // Demo mode - return mock data
@@ -215,117 +236,139 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    // Real Google Places API call
-    const searchUrl = new URL('https://maps.googleapis.com/maps/api/place/textsearch/json')
-    searchUrl.searchParams.set('query', query)
-    searchUrl.searchParams.set('key', GOOGLE_PLACES_API_KEY)
-    
-    if (location) {
-      searchUrl.searchParams.set('location', `${location.lat},${location.lng}`)
-      searchUrl.searchParams.set('radius', radius.toString())
-    }
-    
-    if (type) {
-      searchUrl.searchParams.set('type', type)
-    }
+    // Build text query with location
+    const textQuery = `${query} en ${location}`
 
-    const response = await fetch(searchUrl.toString())
-    const data = await response.json()
+    // Use Places API v2 (New) - Text Search
+    // This API returns more fields in a single call, reducing N+1 calls
+    const allResults: PlaceSearchResult[] = []
+    let pageToken: string | undefined = undefined
+    let pageCount = 0
+    const MAX_PAGES = 3 // Max 60 results (20 per page)
 
-    if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
-      console.error('Google Places API error:', data)
-      return NextResponse.json(
-        { error: 'Error searching places', details: data.status },
-        { status: 500 }
-      )
-    }
+    do {
+      const requestBody: any = {
+        textQuery,
+        languageCode: 'es',
+        maxResultCount: 20,
+      }
 
-    const results: PlaceSearchResult[] = await Promise.all(
-      (data.results || []).map(async (place: any) => {
-        // Get place details for more info
-        const detailsUrl = new URL('https://maps.googleapis.com/maps/api/place/details/json')
-        detailsUrl.searchParams.set('place_id', place.place_id)
-        detailsUrl.searchParams.set('key', GOOGLE_PLACES_API_KEY)
-        detailsUrl.searchParams.set(
-          'fields',
-          'name,formatted_address,formatted_phone_number,international_phone_number,website,rating,user_ratings_total,price_level,types,geometry,opening_hours,photos,address_components'
+      if (pageToken) {
+        requestBody.pageToken = pageToken
+      }
+
+      const response = await fetch('https://places.googleapis.com/v1/places:searchText', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': GOOGLE_PLACES_API_KEY,
+          'X-Goog-FieldMask': FIELD_MASK,
+        },
+        body: JSON.stringify(requestBody),
+      })
+
+      const data = await response.json()
+
+      if (data.error) {
+        console.error('Google Places API v2 error:', data.error)
+        return NextResponse.json(
+          { error: 'Error searching places', details: data.error.message },
+          { status: 500 }
         )
+      }
 
-        const detailsResponse = await fetch(detailsUrl.toString())
-        const detailsData = await detailsResponse.json()
-        const details = detailsData.result || {}
+      // Process results from this page
+      const places = data.places || []
+      
+      for (const place of places) {
+        const hasWebsiteValue = !!place.websiteUri
+        const isChain = detectChain(place.displayName?.text || '')
 
-        const hasWebsite = !!details.website
-        const isChain = detectChain(place.name)
+        // Extract city and country from address components
+        let city = ''
+        let country = ''
+        if (place.addressComponents) {
+          for (const component of place.addressComponents) {
+            if (component.types?.includes('locality')) {
+              city = component.longText
+            }
+            if (component.types?.includes('country')) {
+              country = component.longText
+            }
+          }
+        }
 
         // Calculate web probability
         const businessData: BusinessData = {
-          name: place.name,
-          types: details.types || place.types,
-          category: details.types?.[0] || place.types?.[0] || 'business',
-          website: details.website,
-          hasWebsite,
-          rating: details.rating || place.rating,
-          reviewCount: details.user_ratings_total,
-          priceLevel: details.price_level,
-          photos: details.photos?.length || 0,
+          name: place.displayName?.text || '',
+          types: place.types || [],
+          category: place.types?.[0] || 'business',
+          website: place.websiteUri,
+          hasWebsite: hasWebsiteValue,
+          rating: place.rating,
+          reviewCount: place.userRatingCount,
+          priceLevel: place.priceLevel ? parseInt(place.priceLevel.replace('PRICE_LEVEL_', '')) : undefined,
+          photos: place.photos?.length || 0,
           isChain,
         }
 
         const scoring = calculateWebProbability(businessData)
 
-        // Extract city from address components
-        let city = ''
-        let country = ''
-        if (details.address_components) {
-          for (const component of details.address_components) {
-            if (component.types.includes('locality')) {
-              city = component.long_name
-            }
-            if (component.types.includes('country')) {
-              country = component.long_name
-            }
+        // Map price level from API v2 format
+        let priceLevel: number | undefined
+        if (place.priceLevel) {
+          const priceLevelMap: Record<string, number> = {
+            'PRICE_LEVEL_FREE': 0,
+            'PRICE_LEVEL_INEXPENSIVE': 1,
+            'PRICE_LEVEL_MODERATE': 2,
+            'PRICE_LEVEL_EXPENSIVE': 3,
+            'PRICE_LEVEL_VERY_EXPENSIVE': 4,
           }
+          priceLevel = priceLevelMap[place.priceLevel]
         }
 
-        return {
-          placeId: place.place_id,
-          name: place.name,
-          address: details.formatted_address || place.formatted_address,
+        const result: PlaceSearchResult = {
+          placeId: place.id,
+          name: place.displayName?.text || 'Sin nombre',
+          address: place.formattedAddress || '',
           city,
           country,
-          latitude: place.geometry?.location?.lat,
-          longitude: place.geometry?.location?.lng,
-          types: details.types || place.types || [],
-          category: (details.types?.[0] || place.types?.[0] || 'business')
+          latitude: place.location?.latitude,
+          longitude: place.location?.longitude,
+          types: place.types || [],
+          category: (place.types?.[0] || 'business')
             .replace(/_/g, ' ')
             .replace(/\b\w/g, (l: string) => l.toUpperCase()),
-          rating: details.rating || place.rating,
-          reviewCount: details.user_ratings_total,
-          priceLevel: details.price_level,
-          website: details.website,
-          // Prefer international_phone_number (includes country code) over formatted_phone_number (local format)
-          phone: details.international_phone_number || details.formatted_phone_number,
-          openingHours: details.opening_hours
-            ? {
-                isOpen: details.opening_hours.open_now,
-                weekdayText: details.opening_hours.weekday_text,
-              }
-            : undefined,
-          photos: details.photos?.length || 0,
-          hasWebsite,
+          rating: place.rating,
+          reviewCount: place.userRatingCount,
+          priceLevel,
+          website: place.websiteUri,
+          phone: place.internationalPhoneNumber || place.nationalPhoneNumber,
+          photos: place.photos?.length || 0,
+          hasWebsite: hasWebsiteValue,
           isChain,
           webProbability: scoring.total,
-          // Opportunity info
           opportunityType: scoring.opportunityType,
           redesignPotential: scoring.redesignPotential,
           redesignReason: scoring.redesignReason,
-        } as PlaceSearchResult
-      })
-    )
+        }
+
+        allResults.push(result)
+      }
+
+      // Get next page token
+      pageToken = data.nextPageToken
+      pageCount++
+
+      // Wait 2 seconds between pages (Google requirement)
+      if (pageToken && pageCount < MAX_PAGES) {
+        await new Promise(resolve => setTimeout(resolve, 2000))
+      }
+
+    } while (pageToken && pageCount < MAX_PAGES)
 
     // Apply filters
-    let filteredResults = results
+    let filteredResults = allResults
 
     if (minRating) {
       filteredResults = filteredResults.filter((r) => (r.rating || 0) >= minRating)
@@ -342,6 +385,7 @@ export async function POST(req: NextRequest) {
       results: filteredResults,
       total: filteredResults.length,
       isDemo: false,
+      pagesSearched: pageCount,
     })
   } catch (error) {
     console.error('Places search error:', error)

@@ -88,18 +88,21 @@ export async function POST(req: NextRequest) {
     // Check if number has WhatsApp
     const result = await evolutionClient.checkNumberExists(lead.phone)
 
-    // If no WhatsApp, find or create "Sin WhatsApp" stage and assign it
+    // If no WhatsApp, find or create "Sin wpp" stage and assign it
     let newStageId: string | null = null
     if (!result.exists) {
-      // Find "Sin WhatsApp" stage in this workspace
+      // Find "Sin wpp" or "Sin WhatsApp" stage in this workspace (prioritize existing stages)
       let sinWhatsappStage = await prisma.pipelineStage.findFirst({
         where: {
           workspaceId: lead.workspaceId,
-          name: { contains: 'Sin WhatsApp', mode: 'insensitive' },
+          OR: [
+            { name: { contains: 'Sin wpp', mode: 'insensitive' } },
+            { name: { contains: 'Sin WhatsApp', mode: 'insensitive' } },
+          ],
         },
       })
 
-      // If stage doesn't exist, create it
+      // If stage doesn't exist, create it with the short name
       if (!sinWhatsappStage) {
         // Get max order to add at the end
         const maxOrderStage = await prisma.pipelineStage.findFirst({
@@ -110,8 +113,8 @@ export async function POST(req: NextRequest) {
 
         sinWhatsappStage = await prisma.pipelineStage.create({
           data: {
-            name: 'Sin WhatsApp',
-            color: '#6b7280', // Gray color
+            name: 'Sin wpp',
+            color: '#ef4444', // Red color
             order: nextOrder,
             workspaceId: lead.workspaceId,
           },
