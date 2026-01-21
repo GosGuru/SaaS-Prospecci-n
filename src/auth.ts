@@ -67,6 +67,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }),
   ],
   callbacks: {
+    async redirect({ url, baseUrl }) {
+      // Handle relative URLs
+      if (url.startsWith('/')) {
+        return `${baseUrl}${url}`
+      }
+      // Handle URLs from the same origin
+      if (url.startsWith(baseUrl)) {
+        return url
+      }
+      // Default to dashboard
+      return `${baseUrl}/dashboard`
+    },
     async signIn({ user, account }) {
       // Save OAuth tokens for Gmail integration
       if (account?.provider === 'google' && account.access_token) {
