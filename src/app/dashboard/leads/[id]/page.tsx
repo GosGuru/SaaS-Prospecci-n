@@ -334,7 +334,7 @@ export default function LeadDetailPage() {
         {/* Left column - Lead info */}
         <div className="space-y-6">
           {/* Stage selector */}
-          <Card className="p-4">
+          <Card className="p-4 overflow-visible relative z-20">
             <h3 className="text-sm font-medium text-dark-muted mb-3">Etapa del Pipeline</h3>
             <div className="relative">
               <button
@@ -357,7 +357,7 @@ export default function LeadDetailPage() {
                     initial={{ opacity: 0, y: -10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -10 }}
-                    className="absolute top-full left-0 right-0 mt-2 bg-dark-card border border-dark-border rounded-lg shadow-xl z-10 overflow-hidden"
+                    className="absolute top-full left-0 right-0 mt-2 bg-dark-card border border-dark-border rounded-lg shadow-xl z-50 overflow-hidden"
                   >
                     {stages.map((stage) => (
                       <button
