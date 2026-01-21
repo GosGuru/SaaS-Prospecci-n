@@ -84,16 +84,12 @@ export class WhatsAppClient {
 
   /**
    * Format phone number for WhatsApp API
-   * Removes all non-numeric characters and ensures proper format
+   * Cleans the number removing non-numeric characters
+   * The number should already include the country code (e.g., 598 for Uruguay, 54 for Argentina)
    */
   private formatPhoneNumber(phone: string): string {
-    // Remove all non-numeric characters
-    let cleaned = phone.replace(/\D/g, '')
-    
-    // If starts with 0, assume local number and needs country code
-    if (cleaned.startsWith('0')) {
-      cleaned = cleaned.substring(1)
-    }
+    // Remove all non-numeric characters (spaces, dashes, parentheses, +, etc.)
+    const cleaned = phone.replace(/\D/g, '')
     
     // WhatsApp requires full international format without +
     return cleaned

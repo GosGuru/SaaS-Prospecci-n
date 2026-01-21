@@ -98,23 +98,40 @@ export class EvolutionClient {
     try {
       // Format phone number (remove non-numeric, ensure country code)
       const formattedNumber = this.formatPhoneNumber(payload.number)
+      
+      const url = `${this.config.baseUrl}/message/sendText/${this.config.instance}`
+      const requestBody = {
+        number: formattedNumber,
+        text: payload.text,
+        delay: 1200,
+        linkPreview: payload.linkPreview ?? false,
+      }
+      
+      console.log('[EvolutionClient] sendText - URL:', url)
+      console.log('[EvolutionClient] sendText - Body:', JSON.stringify(requestBody))
 
-      const response = await fetch(
-        `${this.config.baseUrl}/message/sendText/${this.config.instance}`,
-        {
-          method: 'POST',
-          headers: this.headers,
-          body: JSON.stringify({
-            number: formattedNumber,
-            text: payload.text,
-            linkPreview: payload.linkPreview ?? true,
-          }),
-        }
-      )
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: this.headers,
+        body: JSON.stringify(requestBody),
+      })
+
+      console.log('[EvolutionClient] sendText - Response status:', response.status)
 
       if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.message || `Failed to send message: ${response.statusText}`)
+        const errorText = await response.text()
+        console.error('[EvolutionClient] sendText - Error response:', errorText)
+        let errorMessage = `Failed to send message: ${response.statusText}`
+        try {
+          const errorJson = JSON.parse(errorText)
+          errorMessage = errorJson.message || errorJson.error || errorMessage
+        } catch {}
+        throw new Error(errorMessage)
+      }
+
+      const result = await response.json()
+      console.log('[EvolutionClient] sendText - Success:', result)
+      return result
       }
 
       return await response.json()
@@ -190,27 +207,14 @@ export class EvolutionClient {
 
   /**
    * Format phone number for WhatsApp
-   * Ensures proper format with country code
+   * Cleans the number removing non-numeric characters
+   * The number should already include the country code (e.g., 598 for Uruguay, 54 for Argentina)
    */
   private formatPhoneNumber(phone: string): string {
-    // Remove all non-numeric characters
-    let cleaned = phone.replace(/\D/g, '')
-
-    // If starts with 0, assume Argentina local and add country code
-    if (cleaned.startsWith('0')) {
-      cleaned = '54' + cleaned.substring(1)
-    }
-
-    // If doesn't start with country code, assume Argentina
-    if (!cleaned.startsWith('54') && cleaned.length === 10) {
-      cleaned = '54' + cleaned
-    }
-
-    // Remove the 9 after country code for Argentina (if present)
-    // WhatsApp format: 549XXXXXXXXXX -> 54XXXXXXXXXX
-    if (cleaned.startsWith('549') && cleaned.length === 13) {
-      cleaned = '54' + cleaned.substring(3)
-    }
+    // Remove all non-numeric characters (spaces, dashes, parentheses, +, etc.)
+    const cleaned = phone.replace(/\D/g, '')
+    
+    console.log('[EvolutionClient] formatPhoneNumber - input:', phone, 'output:', cleaned)
 
     return cleaned
   }
