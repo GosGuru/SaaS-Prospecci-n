@@ -13,20 +13,26 @@ import { prisma } from '@/lib/prisma'
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    console.log('[Evolution Webhook] Event received:', JSON.stringify(body, null, 2))
+    console.log('[Evolution Webhook] Raw event received:', JSON.stringify(body, null, 2))
 
     const { event, instance, data } = body
+    
+    // Normalize event name (Evolution API can use different formats)
+    const normalizedEvent = event?.toLowerCase().replace(/_/g, '.')
+
+    console.log('[Evolution Webhook] Event:', event, '-> normalized:', normalizedEvent)
 
     // Handle different event types
-    if (event === 'messages.upsert') {
+    if (normalizedEvent === 'messages.upsert') {
       return await handleMessageUpsert(data, instance)
-    } else if (event === 'messages.update') {
+    } else if (normalizedEvent === 'messages.update') {
       return await handleMessageUpdate(data, instance)
-    } else if (event === 'connection.update') {
+    } else if (normalizedEvent === 'connection.update') {
       console.log('[Evolution Webhook] Connection update:', data)
       return NextResponse.json({ success: true })
     }
 
+    console.log('[Evolution Webhook] Unhandled event type:', event)
     return NextResponse.json({ success: true, event })
   } catch (error) {
     console.error('[Evolution Webhook] Error:', error)
@@ -47,10 +53,14 @@ async function handleMessageUpsert(data: any, instance: string) {
 
     // Extract phone number (remove @s.whatsapp.net)
     const phoneNumber = remoteJid.replace('@s.whatsapp.net', '')
+    
+    // Clean phone for comparison (remove all non-numeric)
+    const cleanPhone = phoneNumber.replace(/\D/g, '')
 
     console.log('[Evolution Webhook] Processing message:', {
       messageId,
       phoneNumber,
+      cleanPhone,
       fromMe,
       instance
     })
@@ -72,20 +82,28 @@ async function handleMessageUpsert(data: any, instance: string) {
       return NextResponse.json({ success: true })
     }
 
-    // Find or create lead by phone
+    console.log('[Evolution Webhook] Found workspace:', channelConfig.workspaceId)
+
+    // Find lead by phone - try multiple formats
     let lead = await prisma.lead.findFirst({
       where: {
-        phone: phoneNumber,
-        workspaceId: channelConfig.workspaceId
+        workspaceId: channelConfig.workspaceId,
+        OR: [
+          { phone: phoneNumber },
+          { phone: `+${phoneNumber}` },
+          { phone: { contains: cleanPhone.slice(-10) } }, // Last 10 digits
+        ]
       }
     })
+
+    console.log('[Evolution Webhook] Lead search result:', lead?.id || 'not found')
 
     if (!lead) {
       // Create lead from unknown contact
       lead = await prisma.lead.create({
         data: {
-          name: phoneNumber,
-          phone: phoneNumber,
+          name: `WhatsApp ${phoneNumber}`,
+          phone: `+${phoneNumber}`,
           status: 'NEW',
           workspaceId: channelConfig.workspaceId,
         }
