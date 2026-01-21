@@ -103,7 +103,7 @@ export async function POST(req: NextRequest) {
 
     // Get WhatsApp client
     let whatsappClient: WhatsAppClient | null = null
-    let evolutionClient = getDefaultEvolutionClient()
+    let evolutionClient: ReturnType<typeof getDefaultEvolutionClient> = null
     let isEvolution = false
 
     // Try workspace-specific config first
@@ -145,17 +145,32 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Fall back to default config
+    // Fall back to default Evolution config from environment variables
+    if (!whatsappClient && !evolutionClient) {
+      evolutionClient = getDefaultEvolutionClient()
+      if (evolutionClient) {
+        isEvolution = true
+        console.log('[WhatsApp Send] Using Evolution API from environment variables')
+      }
+    }
+
+    // Fall back to default WhatsApp Meta config
     if (!whatsappClient && !evolutionClient) {
       whatsappClient = getDefaultWhatsAppClient()
+      if (whatsappClient) {
+        console.log('[WhatsApp Send] Using WhatsApp Meta API from environment variables')
+      }
     }
 
     if (!whatsappClient && !evolutionClient) {
+      console.error('[WhatsApp Send] No WhatsApp client configured. Check environment variables: EVOLUTION_BASE_URL, EVOLUTION_API_KEY, EVOLUTION_INSTANCE')
       return NextResponse.json(
-        { error: 'WhatsApp not configured. Set up Evolution API in settings.' },
+        { error: 'WhatsApp not configured. Set up Evolution API in settings or environment variables.' },
         { status: 400 }
       )
     }
+
+    console.log('[WhatsApp Send] Sending to:', lead.phone, 'isEvolution:', isEvolution)
 
     // Create pending message record
     const outboundMessage = await prisma.outboundMessage.create({
