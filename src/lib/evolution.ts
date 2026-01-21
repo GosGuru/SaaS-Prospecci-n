@@ -132,9 +132,6 @@ export class EvolutionClient {
       const result = await response.json()
       console.log('[EvolutionClient] sendText - Success:', result)
       return result
-      }
-
-      return await response.json()
     } catch (error) {
       console.error('Evolution API - sendText error:', error)
       throw error
