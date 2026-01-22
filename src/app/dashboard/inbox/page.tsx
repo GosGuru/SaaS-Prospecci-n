@@ -328,17 +328,31 @@ export default function InboxPage() {
       let endpoint = ''
       let body: any = {
         leadId: selectedConversationId,
-        message: messageInput,
+        message: messageInput || (selectedFile ? `[${selectedFile.type.startsWith('image/') ? 'Imagen' : 'Archivo'}: ${selectedFile.name}]` : ''),
         workspaceId: workspaceId
+      }
+
+      // Handle file upload
+      if (selectedFile) {
+        // Convert file to base64 for sending
+        const base64 = await fileToBase64(selectedFile)
+        body.media = {
+          base64: base64,
+          filename: selectedFile.name,
+          mimetype: selectedFile.type,
+          caption: messageInput || undefined
+        }
+        // If only file is sent without caption, use the file as the message
+        if (!messageInput.trim()) {
+          body.message = `[${selectedFile.type.startsWith('image/') ? 'Imagen' : 'Archivo'}: ${selectedFile.name}]`
+        }
       }
 
       if (channel === 'whatsapp') {
         endpoint = '/api/whatsapp/send'
-        // TODO: Handle file upload for WhatsApp
       } else if (channel === 'email') {
         endpoint = '/api/email/send'
         body.subject = `Re: Conversación con ${selectedConversation.lead.businessName || selectedConversation.lead.name}`
-        // TODO: Handle attachments for email
       }
 
       const response = await fetch(endpoint, {
@@ -363,10 +377,25 @@ export default function InboxPage() {
 
     } catch (err: any) {
       console.error('Error sending message:', err)
-      alert(err.message || 'Error al enviar mensaje. Por favor, intenta de nuevo.')
+      toast.error(err.message || 'Error al enviar mensaje')
     } finally {
       setIsSending(false)
     }
+  }
+
+  // Helper function to convert file to base64
+  function fileToBase64(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.readAsDataURL(file)
+      reader.onload = () => {
+        const result = reader.result as string
+        // Remove the data:mimetype;base64, prefix
+        const base64 = result.split(',')[1]
+        resolve(base64)
+      }
+      reader.onerror = error => reject(error)
+    })
   }
 
   function handleEmojiSelect(emoji: string) {

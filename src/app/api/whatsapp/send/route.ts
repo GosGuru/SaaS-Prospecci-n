@@ -18,12 +18,13 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json()
-    let { leadId, message, templateName, workspaceId } = body
-    console.log('[WhatsApp Send] Body:', { leadId, hasMessage: !!message, templateName, workspaceId })
+    let { leadId, message, templateName, workspaceId, media } = body
+    console.log('[WhatsApp Send] Body:', { leadId, hasMessage: !!message, templateName, workspaceId, hasMedia: !!media })
 
-    if (!leadId || (!message && !templateName)) {
+    // Allow sending media without text message
+    if (!leadId || (!message && !templateName && !media)) {
       return NextResponse.json(
-        { error: 'Lead ID and message or template are required' },
+        { error: 'Lead ID and message, template, or media are required' },
         { status: 400 }
       )
     }
@@ -185,12 +186,17 @@ export async function POST(req: NextRequest) {
 
     console.log('[WhatsApp Send] Sending to:', lead.phone, 'isEvolution:', isEvolution)
 
+    // Determine content for message record
+    const messageContent = media 
+      ? (media.caption || processedMessage || `[${media.mimetype?.startsWith('image/') ? 'Imagen' : 'Archivo'}: ${media.filename}]`)
+      : (processedMessage || `[Template: ${templateName}]`)
+
     // Create pending message record
     const outboundMessage = await prisma.outboundMessage.create({
       data: {
         channel: 'WHATSAPP',
         to: lead.phone,
-        content: processedMessage || `[Template: ${templateName}]`,
+        content: messageContent,
         status: 'PENDING',
         leadId,
       },
@@ -199,7 +205,7 @@ export async function POST(req: NextRequest) {
     try {
       let result
 
-      // Send template or text message
+      // Send template, media, or text message
       if (isEvolution && evolutionClient) {
         if (templateName) {
           return NextResponse.json(
@@ -207,10 +213,33 @@ export async function POST(req: NextRequest) {
             { status: 400 }
           )
         }
-        result = await evolutionClient.sendText({
-          number: lead.phone,
-          text: processedMessage,
-        })
+        
+        // Check if we have media to send
+        if (media && media.base64) {
+          // Determine media type from mimetype
+          let mediaType: 'image' | 'video' | 'audio' | 'document' = 'document'
+          if (media.mimetype?.startsWith('image/')) {
+            mediaType = 'image'
+          } else if (media.mimetype?.startsWith('video/')) {
+            mediaType = 'video'
+          } else if (media.mimetype?.startsWith('audio/')) {
+            mediaType = 'audio'
+          }
+          
+          result = await evolutionClient.sendMedia({
+            number: lead.phone,
+            mediatype: mediaType,
+            media: media.base64,
+            caption: media.caption || processedMessage || undefined,
+            fileName: media.filename,
+          })
+        } else {
+          // Send text message
+          result = await evolutionClient.sendText({
+            number: lead.phone,
+            text: processedMessage,
+          })
+        }
       } else if (whatsappClient) {
         if (templateName) {
           // For first-time contact or business-initiated messages, use templates
