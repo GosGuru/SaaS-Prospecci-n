@@ -283,6 +283,82 @@ export class EvolutionClient {
 
     return statusMap[evolutionStatus] || 'PENDING'
   }
+
+  /**
+   * Set webhook configuration for the instance
+   * This configures Evolution API to send events to our webhook
+   */
+  async setWebhook(webhookUrl: string): Promise<void> {
+    const url = `${this.config.baseUrl}/webhook/set/${this.config.instance}`
+    
+    const webhookConfig = {
+      url: webhookUrl,
+      webhook_by_events: false,
+      webhook_base64: false,
+      events: [
+        'MESSAGES_UPSERT',
+        'MESSAGES_UPDATE',
+        'CONNECTION_UPDATE',
+        'SEND_MESSAGE',
+      ],
+    }
+
+    console.log('[EvolutionClient] setWebhook - URL:', url)
+    console.log('[EvolutionClient] setWebhook - Config:', JSON.stringify(webhookConfig))
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: this.headers,
+        body: JSON.stringify(webhookConfig),
+      })
+
+      console.log('[EvolutionClient] setWebhook - Response status:', response.status)
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error('[EvolutionClient] setWebhook - Error response:', errorText)
+        throw new Error(`Failed to set webhook (${response.status}): ${errorText}`)
+      }
+
+      const data = await response.json()
+      console.log('[EvolutionClient] setWebhook - Success:', data)
+    } catch (error) {
+      console.error('[EvolutionClient] setWebhook - Exception:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Get current webhook configuration
+   */
+  async getWebhook(): Promise<any> {
+    const url = `${this.config.baseUrl}/webhook/find/${this.config.instance}`
+    
+    console.log('[EvolutionClient] getWebhook - URL:', url)
+
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: this.headers,
+      })
+
+      console.log('[EvolutionClient] getWebhook - Response status:', response.status)
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error('[EvolutionClient] getWebhook - Error response:', errorText)
+        return null
+      }
+
+      const data = await response.json()
+      console.log('[EvolutionClient] getWebhook - Data:', data)
+      return data
+    } catch (error) {
+      console.error('[EvolutionClient] getWebhook - Exception:', error)
+      return null
+    }
+  }
 }
 
 /**

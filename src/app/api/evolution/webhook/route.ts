@@ -7,20 +7,40 @@ import { prisma } from '@/lib/prisma'
  * 
  * Configure this webhook in Evolution API Manager:
  * URL: https://your-domain.com/api/evolution/webhook
- * Events: messages.upsert, messages.update
+ * Events: MESSAGES_UPSERT, MESSAGES_UPDATE, CONNECTION_UPDATE
  */
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
+    console.log('[Evolution Webhook] ========================================')
     console.log('[Evolution Webhook] Raw event received:', JSON.stringify(body, null, 2))
 
-    const { event, instance, data } = body
+    // Evolution API v2 can send events in different formats:
+    // Format 1: { event: "messages.upsert", instance: "...", data: {...} }
+    // Format 2: { event: "MESSAGES_UPSERT", instance: {...}, data: [...] }
+    // Format 3: { sender: "...", instance: "...", data: {...}, event: "..." }
+    
+    let event = body.event
+    let instance = body.instance
+    let data = body.data
+    
+    // Handle case where instance is an object
+    if (typeof instance === 'object' && instance !== null) {
+      instance = instance.instanceName || instance.name || instance.instance
+    }
+    
+    // Handle case where sender contains instance name
+    if (!instance && body.sender) {
+      instance = body.sender
+    }
     
     // Normalize event name (Evolution API can use different formats)
+    // MESSAGES_UPSERT -> messages.upsert
+    // messages.upsert -> messages.upsert
     const normalizedEvent = event?.toLowerCase().replace(/_/g, '.')
 
-    console.log('[Evolution Webhook] Event:', event, '-> normalized:', normalizedEvent)
+    console.log('[Evolution Webhook] Parsed - Event:', event, '-> normalized:', normalizedEvent, 'Instance:', instance)
 
     // Handle different event types
     if (normalizedEvent === 'messages.upsert') {
@@ -29,6 +49,10 @@ export async function POST(req: NextRequest) {
       return await handleMessageUpdate(data, instance)
     } else if (normalizedEvent === 'connection.update') {
       console.log('[Evolution Webhook] Connection update:', data)
+      return NextResponse.json({ success: true })
+    } else if (normalizedEvent === 'send.message') {
+      // This is triggered when WE send a message via Evolution API
+      console.log('[Evolution Webhook] Send message event (ignoring - handled separately)')
       return NextResponse.json({ success: true })
     }
 
@@ -45,14 +69,41 @@ export async function POST(req: NextRequest) {
 
 async function handleMessageUpsert(data: any, instance: string) {
   try {
-    const message = data.messages?.[0]
-    if (!message) return NextResponse.json({ success: true })
+    // Evolution API v2 can send data in different formats:
+    // Format 1: { messages: [{ key, message, messageTimestamp }] }
+    // Format 2: Array of messages directly
+    // Format 3: Single message object
+    
+    let messages = data?.messages || data
+    if (!Array.isArray(messages)) {
+      messages = [messages]
+    }
+    
+    const message = messages[0]
+    if (!message) {
+      console.log('[Evolution Webhook] No message in data:', JSON.stringify(data, null, 2))
+      return NextResponse.json({ success: true })
+    }
 
-    const { key, message: messageData, messageTimestamp } = message
+    console.log('[Evolution Webhook] Message object:', JSON.stringify(message, null, 2))
+
+    const { key, message: messageData, messageTimestamp, pushName } = message
+    
+    if (!key) {
+      console.log('[Evolution Webhook] No key in message - skipping')
+      return NextResponse.json({ success: true })
+    }
+    
     const { remoteJid, fromMe, id: messageId } = key
 
+    // Skip group messages (only handle direct messages)
+    if (remoteJid?.includes('@g.us')) {
+      console.log('[Evolution Webhook] Skipping group message')
+      return NextResponse.json({ success: true })
+    }
+
     // Extract phone number (remove @s.whatsapp.net)
-    const phoneNumber = remoteJid.replace('@s.whatsapp.net', '')
+    const phoneNumber = remoteJid?.replace('@s.whatsapp.net', '') || ''
     
     // Clean phone for comparison (remove all non-numeric)
     const cleanPhone = phoneNumber.replace(/\D/g, '')
@@ -62,7 +113,8 @@ async function handleMessageUpsert(data: any, instance: string) {
       phoneNumber,
       cleanPhone,
       fromMe,
-      instance
+      instance,
+      pushName,
     })
 
     // Find workspace by Evolution instance
@@ -169,31 +221,51 @@ async function handleMessageUpsert(data: any, instance: string) {
           }
         })
 
-        // Create activity (find workspace member as userId)
-        const workspaceMember = await prisma.workspaceMember.findFirst({
+        // Find all workspace members to notify
+        const workspaceMembers = await prisma.workspaceMember.findMany({
           where: { 
             workspaceId: channelConfig.workspaceId,
           },
-          orderBy: { createdAt: 'asc' } // Get first member
         })
 
-        if (workspaceMember) {
-          await prisma.activity.create({
+        // Create activity and notifications for all workspace members
+        for (const member of workspaceMembers) {
+          // Create activity (only for first member to avoid duplicates)
+          if (member === workspaceMembers[0]) {
+            await prisma.activity.create({
+              data: {
+                type: 'WHATSAPP',
+                title: 'Mensaje de WhatsApp recibido',
+                description: content.substring(0, 200),
+                metadata: {
+                  messageId,
+                  from: phoneNumber,
+                },
+                leadId: lead.id,
+                userId: member.userId,
+              }
+            })
+          }
+
+          // Create notification for all members
+          await prisma.notification.create({
             data: {
-              type: 'WHATSAPP',
-              title: 'Mensaje de WhatsApp recibido',
-              description: content.substring(0, 200),
+              type: 'NEW_MESSAGE',
+              title: 'Nuevo mensaje de WhatsApp',
+              message: content.substring(0, 200),
+              userId: member.userId,
+              workspaceId: channelConfig.workspaceId,
+              leadId: lead.id,
               metadata: {
                 messageId,
                 from: phoneNumber,
+                channel: 'whatsapp',
               },
-              leadId: lead.id,
-              userId: workspaceMember.userId,
             }
           })
         }
 
-        console.log('[Evolution Webhook] Created inbound message and activity')
+        console.log('[Evolution Webhook] Created inbound message, activity and notifications')
       }
     }
 

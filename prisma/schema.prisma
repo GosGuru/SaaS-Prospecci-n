@@ -23,14 +23,15 @@ model User {
   updatedAt     DateTime  @updatedAt
 
   // Relations
-  accounts    Account[]
-  sessions    Session[]
-  memberships WorkspaceMember[]
-  leads       Lead[]            @relation("LeadOwner")
-  activities  Activity[]
-  tasks       Task[]            @relation("TaskAssignee")
-  createdTasks Task[]           @relation("TaskCreator")
-  auditLogs   AuditLog[]
+  accounts      Account[]
+  sessions      Session[]
+  memberships   WorkspaceMember[]
+  leads         Lead[]            @relation("LeadOwner")
+  activities    Activity[]
+  tasks         Task[]            @relation("TaskAssignee")
+  createdTasks  Task[]            @relation("TaskCreator")
+  auditLogs     AuditLog[]
+  notifications Notification[]
 
   @@map("users")
 }
@@ -184,6 +185,7 @@ model Lead {
   campaignMembers  CampaignMember[]
   stageHistory     LeadStageHistory[]
   enrichmentJobs   EnrichmentJob[]
+  notifications    Notification[]
 
   @@index([workspaceId])
   @@index([placeId])
@@ -586,4 +588,41 @@ model AuditLog {
   @@index([workspaceId])
   @@index([entityType, entityId])
   @@map("audit_logs")
+}
+
+// ============================================
+// NOTIFICATIONS
+// ============================================
+
+model Notification {
+  id          String           @id @default(cuid())
+  type        NotificationType
+  title       String
+  message     String           @db.Text
+  isRead      Boolean          @default(false)
+  readAt      DateTime?
+  metadata    Json?            // Extra data like leadId, messageId, etc.
+  
+  createdAt   DateTime         @default(now())
+  
+  userId      String
+  workspaceId String
+  leadId      String?
+  
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lead        Lead?            @relation(fields: [leadId], references: [id], onDelete: SetNull)
+
+  @@index([userId, isRead])
+  @@index([workspaceId])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+enum NotificationType {
+  NEW_MESSAGE       // New WhatsApp/Email message received
+  LEAD_ASSIGNED     // A lead was assigned to the user
+  TASK_DUE          // A task is due
+  TASK_ASSIGNED     // A task was assigned
+  CAMPAIGN_COMPLETE // A campaign finished
+  SYSTEM            // System notifications
 }

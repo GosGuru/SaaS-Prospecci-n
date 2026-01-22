@@ -758,11 +758,11 @@ function ApiSettings() {
         <div className="space-y-4">
           <div className="flex items-center gap-2 p-3 rounded-lg bg-dark-hover">
             <code className="flex-1 text-sm text-dark-text font-mono truncate">
-              https://tu-app.vercel.app/api/whatsapp/webhook
+              {typeof window !== 'undefined' ? `${window.location.origin}/api/evolution/webhook` : '/api/evolution/webhook'}
             </code>
             <button
               onClick={() =>
-                copyToClipboard('https://tu-app.vercel.app/api/whatsapp/webhook')
+                copyToClipboard(`${window.location.origin}/api/evolution/webhook`)
               }
               className="p-2 rounded-lg hover:bg-dark-border text-dark-muted hover:text-dark-text"
             >
@@ -770,9 +770,52 @@ function ApiSettings() {
             </button>
           </div>
 
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={async () => {
+                try {
+                  const res = await fetch('/api/evolution/webhook/configure')
+                  const data = await res.json()
+                  if (data.configured && data.isCorrect) {
+                    toast.success('Webhook configurado correctamente')
+                  } else if (data.configured && !data.isCorrect) {
+                    toast.error(`Webhook incorrecto. URL actual: ${data.currentUrl || 'ninguna'}`)
+                  } else {
+                    toast.error('WhatsApp no está conectado')
+                  }
+                } catch (e) {
+                  toast.error('Error verificando webhook')
+                }
+              }}
+            >
+              Verificar Webhook
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={async () => {
+                try {
+                  const res = await fetch('/api/evolution/webhook/configure', { method: 'POST' })
+                  const data = await res.json()
+                  if (data.success) {
+                    toast.success('Webhook reconfigurado correctamente')
+                  } else {
+                    toast.error(data.error || 'Error configurando webhook')
+                  }
+                } catch (e) {
+                  toast.error('Error configurando webhook')
+                }
+              }}
+            >
+              Reconfigurar Webhook
+            </Button>
+          </div>
+
           <p className="text-xs text-dark-muted">
-            Configurá esta URL en tu instancia de Evolution API para recibir mensajes
-            entrantes.
+            Esta URL se configura automáticamente al conectar Evolution API. Si no recibes mensajes entrantes,
+            usa el botón &quot;Reconfigurar Webhook&quot; para forzar la configuración.
           </p>
         </div>
       </Card>

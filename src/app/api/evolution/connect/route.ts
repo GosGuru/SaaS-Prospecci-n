@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/prisma'
 import { createEvolutionClient } from '@/lib/evolution'
+import { headers } from 'next/headers'
 
 async function getUserWorkspace(userId: string) {
   const membership = await prisma.workspaceMember.findFirst({
@@ -54,6 +55,23 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ 
         error: 'No se pudo conectar con Evolution API. Verificá las credenciales.' 
       }, { status: 500 })
+    }
+
+    // Determine webhook URL - use the app's base URL
+    const headersList = await headers()
+    const host = headersList.get('host') || 'localhost:3000'
+    const protocol = host.includes('localhost') ? 'http' : 'https'
+    const webhookUrl = `${protocol}://${host}/api/evolution/webhook`
+    
+    console.log('[Evolution Connect] Configuring webhook:', webhookUrl)
+
+    // Configure webhook for incoming messages
+    try {
+      await client.setWebhook(webhookUrl)
+      console.log('[Evolution Connect] Webhook configured successfully')
+    } catch (error) {
+      console.error('[Evolution Connect] Error configuring webhook:', error)
+      // Don't fail the connection, just log the error
     }
 
     // Save config to database

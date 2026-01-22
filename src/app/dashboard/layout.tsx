@@ -16,13 +16,13 @@ import {
   ChevronLeft,
   ChevronRight,
   Search,
-  Bell,
   Zap,
   Target,
 } from 'lucide-react'
 import { signOut } from 'next-auth/react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { NotificationsDropdown } from '@/components/notifications/NotificationsDropdown'
 
 interface LayoutProps {
   children: ReactNode
@@ -218,10 +218,7 @@ export default function DashboardLayout({ children }: LayoutProps) {
           </div>
 
           <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" className="relative">
-              <Bell className="w-5 h-5" />
-              <span className="absolute top-1 right-1 w-2 h-2 bg-brand-500 rounded-full" />
-            </Button>
+            <NotificationsDropdown />
           </div>
         </header>
 
