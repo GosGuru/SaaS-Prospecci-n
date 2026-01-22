@@ -27,33 +27,46 @@ export async function GET(req: NextRequest) {
       where.isRead = false
     }
 
-    const [notifications, unreadCount] = await Promise.all([
-      prisma.notification.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        take: limit,
-        include: {
-          lead: {
-            select: {
-              id: true,
-              name: true,
-              businessName: true,
+    // Try to fetch notifications, handle case where table doesn't exist yet
+    try {
+      const [notifications, unreadCount] = await Promise.all([
+        prisma.notification.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          take: limit,
+          include: {
+            lead: {
+              select: {
+                id: true,
+                name: true,
+                businessName: true,
+              },
             },
           },
-        },
-      }),
-      prisma.notification.count({
-        where: {
-          userId: session.user.id,
-          isRead: false,
-        },
-      }),
-    ])
+        }),
+        prisma.notification.count({
+          where: {
+            userId: session.user.id,
+            isRead: false,
+          },
+        }),
+      ])
 
-    return NextResponse.json({
-      notifications,
-      unreadCount,
-    })
+      return NextResponse.json({
+        notifications,
+        unreadCount,
+      })
+    } catch (dbError: any) {
+      // If table doesn't exist yet, return empty array
+      if (dbError?.code === 'P2021' || dbError?.message?.includes('does not exist')) {
+        console.log('[Notifications API] Table not yet created, returning empty')
+        return NextResponse.json({
+          notifications: [],
+          unreadCount: 0,
+        })
+      }
+      throw dbError
+    }
   } catch (error) {
     console.error('[Notifications API] Error:', error)
     return NextResponse.json(
