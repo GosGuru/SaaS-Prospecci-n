@@ -7,6 +7,7 @@ import { prisma } from '@/lib/prisma'
  * Query params:
  * - unreadOnly: boolean - Only return unread notifications
  * - limit: number - Max notifications to return (default 20)
+ * - type: string - Filter by notification type
  */
 export async function GET(req: NextRequest) {
   try {
@@ -18,6 +19,7 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url)
     const unreadOnly = searchParams.get('unreadOnly') === 'true'
     const limit = parseInt(searchParams.get('limit') || '20')
+    const type = searchParams.get('type')
 
     const where: any = {
       userId: session.user.id,
@@ -25,6 +27,10 @@ export async function GET(req: NextRequest) {
 
     if (unreadOnly) {
       where.isRead = false
+    }
+
+    if (type) {
+      where.type = type
     }
 
     // Try to fetch notifications, handle case where table doesn't exist yet

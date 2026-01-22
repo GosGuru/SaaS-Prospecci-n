@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useRouter } from 'next/navigation'
@@ -14,10 +14,13 @@ import {
   X,
   Check,
   Loader2,
+  Volume2,
+  VolumeX,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { formatDistanceToNow } from 'date-fns'
 import { es } from 'date-fns/locale'
+import { useNotificationSound } from '@/lib/useNotificationSound'
 
 interface Notification {
   id: string
@@ -60,9 +63,55 @@ const notificationColors = {
 
 export function NotificationsDropdown() {
   const [isOpen, setIsOpen] = useState(false)
+  const [soundEnabled, setSoundEnabled] = useState(true)
   const dropdownRef = useRef<HTMLDivElement>(null)
+  const previousUnreadCountRef = useRef<number>(0)
+  const hasInteractedRef = useRef(false)
   const router = useRouter()
   const queryClient = useQueryClient()
+  
+  // Notification sound hook
+  const { play: playNotificationSound, enableSound } = useNotificationSound({
+    volume: 0.6,
+    enabled: soundEnabled,
+  })
+
+  // Enable sound on first user interaction
+  useEffect(() => {
+    const handleFirstInteraction = () => {
+      if (!hasInteractedRef.current) {
+        hasInteractedRef.current = true
+        enableSound()
+        document.removeEventListener('click', handleFirstInteraction)
+        document.removeEventListener('keydown', handleFirstInteraction)
+      }
+    }
+
+    document.addEventListener('click', handleFirstInteraction)
+    document.addEventListener('keydown', handleFirstInteraction)
+
+    return () => {
+      document.removeEventListener('click', handleFirstInteraction)
+      document.removeEventListener('keydown', handleFirstInteraction)
+    }
+  }, [enableSound])
+
+  // Load sound preference from localStorage
+  useEffect(() => {
+    const saved = localStorage.getItem('notificationSoundEnabled')
+    if (saved !== null) {
+      setSoundEnabled(saved === 'true')
+    }
+  }, [])
+
+  // Save sound preference
+  const toggleSound = useCallback(() => {
+    setSoundEnabled(prev => {
+      const newValue = !prev
+      localStorage.setItem('notificationSoundEnabled', String(newValue))
+      return newValue
+    })
+  }, [])
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -84,9 +133,21 @@ export function NotificationsDropdown() {
       if (!res.ok) throw new Error('Failed to fetch notifications')
       return res.json()
     },
-    refetchInterval: 30000, // Poll every 30 seconds
-    staleTime: 10000,
+    refetchInterval: 15000, // Poll every 15 seconds for faster updates
+    staleTime: 5000,
   })
+
+  // Play sound when new notifications arrive
+  useEffect(() => {
+    const currentUnreadCount = data?.unreadCount ?? 0
+    
+    // Only play sound if unread count increased (new notification)
+    if (currentUnreadCount > previousUnreadCountRef.current && previousUnreadCountRef.current !== 0) {
+      playNotificationSound()
+    }
+    
+    previousUnreadCountRef.current = currentUnreadCount
+  }, [data?.unreadCount, playNotificationSound])
 
   // Mark as read mutation
   const markAsReadMutation = useMutation({
@@ -126,9 +187,10 @@ export function NotificationsDropdown() {
       markAsReadMutation.mutate([notification.id])
     }
 
-    // Navigate based on notification type
+    // Navigate based on notification type - go directly to the chat
     if (notification.type === 'NEW_MESSAGE' && notification.leadId) {
-      router.push(`/dashboard/inbox`)
+      // Navigate to inbox with the specific lead selected
+      router.push(`/dashboard/inbox?leadId=${notification.leadId}`)
       setIsOpen(false)
     } else if (notification.leadId) {
       router.push(`/dashboard/leads/${notification.leadId}`)
@@ -164,7 +226,25 @@ export function NotificationsDropdown() {
           >
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-dark-border">
-              <h3 className="font-semibold text-dark-text">Notificaciones</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="font-semibold text-dark-text">Notificaciones</h3>
+                <button
+                  onClick={toggleSound}
+                  className={cn(
+                    "p-1 rounded transition-colors",
+                    soundEnabled 
+                      ? "text-brand-400 hover:bg-brand-500/10" 
+                      : "text-dark-muted hover:bg-dark-hover"
+                  )}
+                  title={soundEnabled ? "Sonido activado" : "Sonido desactivado"}
+                >
+                  {soundEnabled ? (
+                    <Volume2 className="w-4 h-4" />
+                  ) : (
+                    <VolumeX className="w-4 h-4" />
+                  )}
+                </button>
+              </div>
               {unreadCount > 0 && (
                 <button
                   onClick={() => markAllReadMutation.mutate()}

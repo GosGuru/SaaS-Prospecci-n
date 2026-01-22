@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo, useRef } from 'react'
+import { useSearchParams } from 'next/navigation'
 import {
   Search,
   MessageCircle,
@@ -97,6 +98,24 @@ export default function InboxPage() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  
+  // Get leadId from URL params (when clicking on a notification)
+  const searchParams = useSearchParams()
+  const urlLeadId = searchParams.get('leadId')
+
+  // Handle leadId from URL
+  useEffect(() => {
+    if (urlLeadId && conversations.length > 0) {
+      // Check if the lead exists in conversations
+      const conversation = conversations.find(c => c.id === urlLeadId || c.lead.id === urlLeadId)
+      if (conversation) {
+        setSelectedConversationId(conversation.id)
+      } else {
+        // If not found in current list, still try to select it
+        setSelectedConversationId(urlLeadId)
+      }
+    }
+  }, [urlLeadId, conversations])
 
   // Fetch conversations
   useEffect(() => {
