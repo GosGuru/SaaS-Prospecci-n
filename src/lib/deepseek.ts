@@ -13,11 +13,21 @@ const DEEPSEEK_MODEL = 'deepseek-chat'
 
 export type MessageTemplate = 'presentacion' | 'seguimiento' | 'sin_web'
 export type MessageChannel = 'whatsapp' | 'email'
+export type ReplyTone = 'amigable' | 'profesional' | 'cerrar_cita'
 
 export interface GenerateMessageParams {
   lead: Lead
   template: MessageTemplate
   channel: MessageChannel
+  customContext?: string
+}
+
+export interface GenerateReplyParams {
+  lead: Lead
+  tone: ReplyTone
+  channel: MessageChannel
+  clientMessages: string[]
+  conversationHistory: string
   customContext?: string
 }
 
@@ -342,4 +352,223 @@ export const TEMPLATE_LABELS: Record<MessageTemplate, string> = {
   presentacion: 'Presentación',
   seguimiento: 'Seguimiento',
   sin_web: 'Sin web',
+}
+
+/**
+ * Reply tone display names for UI
+ */
+export const REPLY_TONE_LABELS: Record<ReplyTone, string> = {
+  amigable: 'Amigable',
+  profesional: 'Profesional',
+  cerrar_cita: 'Cerrar Cita',
+}
+
+/**
+ * Get system prompt for reply messages (NOT cold outreach)
+ * Metodología Alfonso y Christian - Continuación de Conversación
+ */
+function getReplySystemPrompt(tone: ReplyTone, channel: MessageChannel): string {
+  const baseStyle = `
+Sos Máximo, desarrollador web. Estás en una CONVERSACIÓN ACTIVA con un prospecto que ya te respondió.
+
+═══════════════════════════════════════════════════════════════
+CONTEXTO: ESTO NO ES UN MENSAJE EN FRÍO
+═══════════════════════════════════════════════════════════════
+
+Ya contactaste a esta persona y TE RESPONDIÓ. Ahora debés continuar 
+la conversación de forma natural, respondiendo a lo que te escribió.
+
+═══════════════════════════════════════════════════════════════
+REGLA MÁXIMA: NUNCA MENTIR
+═══════════════════════════════════════════════════════════════
+
+PROHIBIDO INVENTAR:
+❌ NUNCA digas "ayudo a negocios como el tuyo" (no tenés clientes todavía)
+❌ NUNCA inventes casos de éxito o resultados
+❌ NUNCA pretendas tener experiencia que no tenés
+❌ NUNCA inventes datos o estadísticas
+
+LO QUE SÍ PODÉS DECIR (es verdad):
+✅ "Soy desarrollador web"
+✅ "Me dedico a hacer páginas web"
+✅ "Estoy empezando y busco proyectos interesantes"
+✅ Responder genuinamente a sus preguntas
+
+═══════════════════════════════════════════════════════════════
+CÓMO RESPONDER A MENSAJES DEL CLIENTE
+═══════════════════════════════════════════════════════════════
+
+1. LEE CUIDADOSAMENTE lo que te escribió el cliente
+2. RESPONDE ESPECÍFICAMENTE a lo que preguntó o comentó
+3. Si pregunta precios: Sé honesto, podés dar un rango o decir que depende del proyecto
+4. Si muestra interés: Proponé una llamada o reunión corta
+5. Si tiene dudas: Responde con honestidad y sin presión
+6. Si dice que no le interesa: Agradecé amablemente y dejá la puerta abierta
+
+ESTRUCTURA DE RESPUESTA:
+- Reconocé lo que dijo el cliente (muestra que leíste)
+- Respondé a su punto específico
+- Incluí un siguiente paso claro pero sin presión
+
+PROHIBIDO:
+- Ignorar lo que escribió el cliente
+- Responder con un pitch genérico
+- Ser insistente o agresivo
+- Más de 4-5 líneas
+`.trim()
+
+  const toneInstructions: Record<ReplyTone, string> = {
+    amigable: `
+
+═══════════════════════════════════════════════════════════════
+TONO: AMIGABLE
+═══════════════════════════════════════════════════════════════
+Respondé de manera casual, cercana y relajada.
+
+- Usá un tono conversacional, como si hablaras con un conocido
+- Podés usar emojis moderadamente (1-2 máximo)
+- Sé cálido y accesible
+- No seas demasiado formal
+
+Ejemplos de estilo:
+- "¡Genial que te interese! Te cuento..."
+- "Claro, te explico..."
+- "Dale, podemos coordinarlo..."
+`,
+    profesional: `
+
+═══════════════════════════════════════════════════════════════
+TONO: PROFESIONAL
+═══════════════════════════════════════════════════════════════
+Respondé de manera seria pero amable.
+
+- Mantené un tono profesional pero no frío
+- Evitá emojis o usá muy pocos
+- Sé claro y directo
+- Mostrá profesionalismo sin ser distante
+
+Ejemplos de estilo:
+- "Gracias por tu respuesta. Te comento..."
+- "Con gusto te explico..."
+- "Podemos coordinar una reunión para..."
+`,
+    cerrar_cita: `
+
+═══════════════════════════════════════════════════════════════
+TONO: CERRAR CITA
+═══════════════════════════════════════════════════════════════
+Tu objetivo es agendar una llamada o reunión.
+
+- Respondé brevemente a lo que preguntó
+- Proponé una llamada/reunión como siguiente paso
+- Dá opciones de horario o preguntá su disponibilidad
+- Sé directo pero no agresivo
+
+Ejemplos de estilo:
+- "Te entiendo. ¿Qué tal si lo hablamos en una llamada de 10 min?"
+- "Claro, te puedo explicar mejor por llamada. ¿Te viene bien mañana?"
+- "Para darte info más precisa, podemos hacer una llamada corta. ¿Cuándo te queda?"
+`,
+  }
+
+  const channelInstructions = channel === 'email' 
+    ? `
+
+Para EMAIL: 
+- Generá un asunto que continúe la conversación (ej: "Re: Tu consulta sobre...")
+- Formato: asunto en una línea, luego "---", luego el cuerpo
+- Puede ser un poco más largo que WhatsApp pero sigue siendo breve`
+    : `
+
+Para WHATSAPP:
+- MÁXIMO 4-5 líneas
+- Conversacional, como un mensaje normal
+- No pongas "Hola" si ya estás en medio de una conversación`
+
+  return baseStyle + toneInstructions[tone] + channelInstructions
+}
+
+/**
+ * Generate a reply message using DeepSeek AI
+ */
+export async function generateReplyMessage(
+  params: GenerateReplyParams
+): Promise<GeneratedMessage> {
+  const { lead, tone, channel, clientMessages, conversationHistory, customContext } = params
+
+  const apiKey = process.env.DEEPSEEK_API_KEY
+  if (!apiKey) {
+    throw new Error('DEEPSEEK_API_KEY not configured')
+  }
+
+  const leadContext = buildLeadContext(lead)
+  const systemPrompt = getReplySystemPrompt(tone, channel)
+
+  // Format client messages for the prompt
+  const clientMessagesFormatted = clientMessages.length === 1
+    ? `Mensaje del cliente: "${clientMessages[0]}"`
+    : `Mensajes del cliente (en orden cronológico):\n${clientMessages.map((m, i) => `${i + 1}. "${m}"`).join('\n')}`
+
+  const userPrompt = `
+Genera una respuesta de ${channel === 'whatsapp' ? 'WhatsApp' : 'email'} para este cliente.
+
+═══════════════════════════════════════════════════════════════
+INFORMACIÓN DEL LEAD/NEGOCIO:
+═══════════════════════════════════════════════════════════════
+${leadContext}
+
+═══════════════════════════════════════════════════════════════
+HISTORIAL DE LA CONVERSACIÓN:
+═══════════════════════════════════════════════════════════════
+${conversationHistory}
+
+═══════════════════════════════════════════════════════════════
+MENSAJES QUE DEBÉS RESPONDER:
+═══════════════════════════════════════════════════════════════
+${clientMessagesFormatted}
+
+${customContext ? `\nContexto adicional: ${customContext}` : ''}
+
+IMPORTANTE: Respondé específicamente a lo que escribió el cliente.
+Genera solo el mensaje de respuesta, sin explicaciones adicionales.
+`.trim()
+
+  const messages: DeepSeekMessage[] = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: userPrompt },
+  ]
+
+  const response = await fetch(DEEPSEEK_API_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: DEEPSEEK_MODEL,
+      messages,
+      temperature: 0.7,
+      max_tokens: 500,
+    }),
+  })
+
+  if (!response.ok) {
+    const error = await response.text()
+    console.error('[DeepSeek] API error:', error)
+    throw new Error(`DeepSeek API error: ${response.status}`)
+  }
+
+  const data: DeepSeekResponse = await response.json()
+  
+  if (!data.choices?.[0]?.message?.content) {
+    throw new Error('Invalid response from DeepSeek API')
+  }
+
+  const generatedContent = data.choices[0].message.content
+  const result = parseResponse(generatedContent, channel)
+
+  return {
+    ...result,
+    tokensUsed: data.usage?.total_tokens,
+  }
 }

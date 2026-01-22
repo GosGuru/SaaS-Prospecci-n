@@ -21,6 +21,8 @@ import {
   Archive,
   Ban,
   AlertTriangle,
+  Sparkles,
+  ChevronDown,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -33,6 +35,13 @@ import { ConversationMenu } from '@/components/inbox/ConversationMenu'
 import toast from 'react-hot-toast'
 
 type ChannelFilter = 'all' | 'whatsapp' | 'email'
+type ReplyTone = 'amigable' | 'profesional' | 'cerrar_cita'
+
+const REPLY_TONE_OPTIONS: { value: ReplyTone; label: string; description: string }[] = [
+  { value: 'amigable', label: '😊 Amigable', description: 'Casual y cercano' },
+  { value: 'profesional', label: '💼 Profesional', description: 'Serio pero amable' },
+  { value: 'cerrar_cita', label: '📅 Cerrar Cita', description: 'Agendar llamada/reunión' },
+]
 
 interface Conversation {
   id: string
@@ -95,6 +104,12 @@ export default function InboxPage() {
   const [showBlockModal, setShowBlockModal] = useState(false)
   const [actionLeadId, setActionLeadId] = useState<string | null>(null)
   const [actionLeadName, setActionLeadName] = useState<string>('')
+
+  // AI reply states
+  const [isGeneratingReply, setIsGeneratingReply] = useState(false)
+  const [showToneSelector, setShowToneSelector] = useState(false)
+  const [selectedTone, setSelectedTone] = useState<ReplyTone>('amigable')
+  const toneSelectorRef = useRef<HTMLDivElement>(null)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -159,6 +174,17 @@ export default function InboxPage() {
       textareaRef.current.style.height = textareaRef.current.scrollHeight + 'px'
     }
   }, [messageInput])
+
+  // Close tone selector when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (toneSelectorRef.current && !toneSelectorRef.current.contains(event.target as Node)) {
+        setShowToneSelector(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
 
   async function fetchConversations() {
     try {
@@ -446,6 +472,58 @@ export default function InboxPage() {
   function handleRemoveFile() {
     setSelectedFile(null)
     setFilePreview(null)
+  }
+
+  async function handleGenerateAIReply(tone: ReplyTone) {
+    if (!selectedConversationId) return
+    
+    const selectedConversation = conversations.find(c => c.id === selectedConversationId)
+    if (!selectedConversation) return
+
+    // Determine channel from conversation
+    let channel = selectedConversation.lastMessageChannel
+    if (selectedConversation.channel === 'both') {
+      channel = channel || 'whatsapp'
+    } else {
+      channel = selectedConversation.channel
+    }
+
+    setIsGeneratingReply(true)
+    setShowToneSelector(false)
+
+    try {
+      const response = await fetch('/api/ai/generate-reply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          leadId: selectedConversationId,
+          tone,
+          channel,
+        })
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Error al generar respuesta')
+      }
+
+      const data = await response.json()
+      
+      // Set the generated message in the input for review before sending
+      setMessageInput(data.message)
+      
+      // Focus on the textarea for editing
+      setTimeout(() => {
+        textareaRef.current?.focus()
+      }, 100)
+      
+      toast.success('Respuesta generada con IA ✨')
+    } catch (err: any) {
+      console.error('Error generating AI reply:', err)
+      toast.error(err.message || 'Error al generar respuesta con IA')
+    } finally {
+      setIsGeneratingReply(false)
+    }
   }
 
   const filteredConversations = useMemo(() => {
@@ -788,6 +866,52 @@ export default function InboxPage() {
                       selectedFile={selectedFile}
                       preview={filePreview}
                     />
+                    
+                    {/* AI Reply Button with Tone Selector */}
+                    <div className="relative" ref={toneSelectorRef}>
+                      <button
+                        type="button"
+                        onClick={() => setShowToneSelector(!showToneSelector)}
+                        disabled={isGeneratingReply || messages.filter(m => m.type === 'inbound').length === 0}
+                        className={cn(
+                          "p-2 rounded-lg transition-colors flex items-center gap-1",
+                          isGeneratingReply 
+                            ? "bg-brand-500/20 text-brand-400"
+                            : messages.filter(m => m.type === 'inbound').length === 0
+                              ? "text-dark-muted cursor-not-allowed"
+                              : "hover:bg-dark-hover text-dark-muted hover:text-brand-400"
+                        )}
+                        title="Generar respuesta con IA"
+                      >
+                        {isGeneratingReply ? (
+                          <Loader2 className="w-5 h-5 animate-spin" />
+                        ) : (
+                          <>
+                            <Sparkles className="w-5 h-5" />
+                            <ChevronDown className="w-3 h-3" />
+                          </>
+                        )}
+                      </button>
+
+                      {showToneSelector && (
+                        <div className="absolute bottom-full left-0 mb-2 bg-dark-card border border-dark-border rounded-lg shadow-lg py-1 min-w-[200px] z-50">
+                          <div className="px-3 py-2 border-b border-dark-border">
+                            <p className="text-xs font-medium text-dark-muted">Generar respuesta con IA</p>
+                          </div>
+                          {REPLY_TONE_OPTIONS.map((option) => (
+                            <button
+                              key={option.value}
+                              type="button"
+                              onClick={() => handleGenerateAIReply(option.value)}
+                              className="w-full px-3 py-2 text-left hover:bg-dark-hover transition-colors"
+                            >
+                              <p className="text-sm text-dark-text">{option.label}</p>
+                              <p className="text-xs text-dark-muted">{option.description}</p>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   <div className="flex-1">
