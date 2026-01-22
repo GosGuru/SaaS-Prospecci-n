@@ -65,7 +65,7 @@ export function NotificationsDropdown() {
   const [isOpen, setIsOpen] = useState(false)
   const [soundEnabled, setSoundEnabled] = useState(true)
   const dropdownRef = useRef<HTMLDivElement>(null)
-  const previousUnreadCountRef = useRef<number>(0)
+  const previousUnreadCountRef = useRef<number>(-1) // -1 = not initialized
   const hasInteractedRef = useRef(false)
   const router = useRouter()
   const queryClient = useQueryClient()
@@ -104,14 +104,18 @@ export function NotificationsDropdown() {
     }
   }, [])
 
-  // Save sound preference
+  // Save sound preference and test sound
   const toggleSound = useCallback(() => {
     setSoundEnabled(prev => {
       const newValue = !prev
       localStorage.setItem('notificationSoundEnabled', String(newValue))
+      // Play sound when enabling to confirm it works
+      if (newValue) {
+        setTimeout(() => playNotificationSound(), 100)
+      }
       return newValue
     })
-  }, [])
+  }, [playNotificationSound])
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -141,12 +145,22 @@ export function NotificationsDropdown() {
   useEffect(() => {
     const currentUnreadCount = data?.unreadCount ?? 0
     
-    // Only play sound if unread count increased (new notification)
-    if (currentUnreadCount > previousUnreadCountRef.current && previousUnreadCountRef.current !== 0) {
+    // Only play sound if unread count increased (new notification arrived)
+    // Skip the initial load (when previousUnreadCountRef is -1)
+    if (previousUnreadCountRef.current >= 0 && currentUnreadCount > previousUnreadCountRef.current) {
+      console.log('New notification! Playing sound...', { 
+        previous: previousUnreadCountRef.current, 
+        current: currentUnreadCount 
+      })
       playNotificationSound()
     }
     
-    previousUnreadCountRef.current = currentUnreadCount
+    // Set to current count (use -1 as initial marker)
+    if (previousUnreadCountRef.current === -1) {
+      previousUnreadCountRef.current = currentUnreadCount
+    } else {
+      previousUnreadCountRef.current = currentUnreadCount
+    }
   }, [data?.unreadCount, playNotificationSound])
 
   // Mark as read mutation

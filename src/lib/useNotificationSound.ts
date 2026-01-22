@@ -1,143 +1,95 @@
 'use client'
 
-import { useRef, useCallback, useEffect, useState } from 'react'
+import { useRef, useCallback, useEffect } from 'react'
 
 interface UseNotificationSoundOptions {
   volume?: number // 0-1
   enabled?: boolean
 }
 
-export function useNotificationSound(options: UseNotificationSoundOptions = {}) {
-  const { volume = 0.5, enabled = true } = options
-  const audioRef = useRef<HTMLAudioElement | null>(null)
-  const lastPlayedRef = useRef<number>(0)
-  const [isReady, setIsReady] = useState(false)
-
-  // Initialize audio on mount
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-
-    // Try WAV first (better compatibility), then MP3
-    const audio = new Audio()
-    audio.volume = volume
-    audio.preload = 'auto'
-    
-    const handleCanPlay = () => {
-      setIsReady(true)
-      console.log('Notification sound loaded and ready')
+// Create a pleasant notification sound using Web Audio API
+function createNotificationSound(volume: number = 0.5): void {
+  try {
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext
+    if (!AudioContextClass) {
+      console.warn('Web Audio API not supported')
+      return
     }
     
-    const handleError = (e: Event) => {
-      console.warn('Failed to load notification sound:', e)
-      // Still mark as ready to use fallback
-      setIsReady(true)
-    }
+    const audioContext = new AudioContextClass()
     
-    audio.addEventListener('canplaythrough', handleCanPlay)
-    audio.addEventListener('error', handleError)
+    // Create a pleasant two-tone notification
+    const frequencies = [880, 1100] // A5 and C#6 - pleasant chime
+    const duration = 0.15
     
-    // Try WAV first, fallback to MP3
-    audio.src = '/sounds/notification.wav'
-    audio.load()
-    
-    audioRef.current = audio
-
-    return () => {
-      audio.removeEventListener('canplaythrough', handleCanPlay)
-      audio.removeEventListener('error', handleError)
-      if (audioRef.current) {
-        audioRef.current.pause()
-        audioRef.current = null
-      }
-    }
-  }, [])
-
-  // Update volume when it changes
-  useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.volume = volume
-    }
-  }, [volume])
-
-  // Fallback beep using Web Audio API
-  const playBeep = useCallback(() => {
-    try {
-      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext
-      if (!AudioContextClass) return
-      
-      const audioContext = new AudioContextClass()
+    frequencies.forEach((freq, index) => {
       const oscillator = audioContext.createOscillator()
       const gainNode = audioContext.createGain()
       
       oscillator.connect(gainNode)
       gainNode.connect(audioContext.destination)
       
-      oscillator.frequency.value = 800 // Hz
+      oscillator.frequency.value = freq
       oscillator.type = 'sine'
       
-      gainNode.gain.setValueAtTime(volume * 0.3, audioContext.currentTime)
-      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3)
+      const startTime = audioContext.currentTime + (index * 0.1)
       
-      oscillator.start(audioContext.currentTime)
-      oscillator.stop(audioContext.currentTime + 0.3)
-    } catch (e) {
-      console.debug('Web Audio API fallback failed:', e)
-    }
-  }, [volume])
+      gainNode.gain.setValueAtTime(0, startTime)
+      gainNode.gain.linearRampToValueAtTime(volume * 0.4, startTime + 0.02)
+      gainNode.gain.exponentialRampToValueAtTime(0.001, startTime + duration)
+      
+      oscillator.start(startTime)
+      oscillator.stop(startTime + duration + 0.1)
+    })
+    
+    console.log('🔔 Notification sound played!')
+  } catch (e) {
+    console.warn('Failed to play notification sound:', e)
+  }
+}
+
+export function useNotificationSound(options: UseNotificationSoundOptions = {}) {
+  const { volume = 0.5, enabled = true } = options
+  const lastPlayedRef = useRef<number>(0)
+  const enabledRef = useRef(enabled)
+
+  // Keep enabled ref in sync
+  useEffect(() => {
+    enabledRef.current = enabled
+  }, [enabled])
 
   const play = useCallback(() => {
-    if (!enabled) return
+    if (!enabledRef.current) {
+      console.log('Sound disabled, not playing')
+      return
+    }
 
-    // Debounce: don't play if played within last 1000ms
+    // Debounce: don't play if played within last 500ms
     const now = Date.now()
-    if (now - lastPlayedRef.current < 1000) return
+    if (now - lastPlayedRef.current < 500) {
+      console.log('Sound debounced')
+      return
+    }
     lastPlayedRef.current = now
 
-    try {
-      if (audioRef.current && audioRef.current.readyState >= 2) {
-        // Audio is ready, play it
-        audioRef.current.currentTime = 0
-        const playPromise = audioRef.current.play()
-        
-        if (playPromise !== undefined) {
-          playPromise
-            .then(() => {
-              console.log('Notification sound played')
-            })
-            .catch((error) => {
-              console.debug('Audio play prevented, using beep fallback:', error.message)
-              playBeep()
-            })
-        }
-      } else {
-        // Audio not ready, use beep fallback
-        console.debug('Audio not ready, using beep fallback')
-        playBeep()
-      }
-    } catch (error) {
-      console.debug('Error playing notification sound:', error)
-      playBeep()
-    }
-  }, [enabled, playBeep])
+    createNotificationSound(volume)
+  }, [volume])
 
   const enableSound = useCallback(() => {
-    // This function should be called on user interaction to enable sound
-    // It "unlocks" audio playback on mobile browsers
-    if (audioRef.current) {
-      const originalVolume = audioRef.current.volume
-      audioRef.current.volume = 0
-      audioRef.current.play()
-        .then(() => {
-          audioRef.current!.pause()
-          audioRef.current!.volume = originalVolume
-          audioRef.current!.currentTime = 0
-          console.log('Audio unlocked for future playback')
-        })
-        .catch(() => {
-          // Ignore - will try again on next interaction
-        })
+    // Resume audio context if suspended (needed for some browsers)
+    try {
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext
+      if (AudioContextClass) {
+        const ctx = new AudioContextClass()
+        if (ctx.state === 'suspended') {
+          ctx.resume()
+        }
+        ctx.close()
+      }
+    } catch (e) {
+      // Ignore
     }
   }, [])
 
-  return { play, enableSound, isReady }
+  return { play, enableSound, isReady: true }
 }
