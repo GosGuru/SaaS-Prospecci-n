@@ -69,6 +69,7 @@ export default function SearchPage() {
     data: searchResults,
     isLoading,
     isError,
+    error,
     refetch,
   } = useQuery({
     queryKey: ['places-search', searchQuery, location, filters],
@@ -90,12 +91,15 @@ export default function SearchPage() {
       })
 
       if (!response.ok) {
-        throw new Error('Error en la búsqueda')
+        const data = await response.json().catch(() => null)
+        const message = data?.details || data?.error || 'Error en la búsqueda'
+        throw new Error(message)
       }
 
       return response.json()
     },
     enabled: searchQuery.length > 0 && location.length > 0,
+    retry: false,
     staleTime: 1000 * 60 * 5, // 5 minutes
   })
 
@@ -168,6 +172,7 @@ export default function SearchPage() {
 
   const results = searchResults?.results || []
   const isDemo = searchResults?.isDemo
+  const searchWarning = (searchResults as { warning?: string } | undefined)?.warning
 
   return (
     <div className="space-y-6">
@@ -261,6 +266,17 @@ export default function SearchPage() {
         {/* Filters panel */}
         <AnimatePresence>
           {showFilters && (
+
+      {searchWarning && (
+        <Card className="p-4 border-warning/40 bg-warning/10">
+          <div className="flex items-start gap-3">
+            <Info className="w-5 h-5 text-warning mt-0.5" />
+            <p className="text-sm text-warning">
+              {searchWarning}. Mostrando resultados demo temporalmente.
+            </p>
+          </div>
+        </Card>
+      )}
             <motion.div
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: 'auto', opacity: 1 }}
@@ -397,7 +413,7 @@ export default function SearchPage() {
             <ProspectSearchSkeleton />
           ) : isError ? (
             <Card className="p-8 text-center">
-              <p className="text-danger">Error al buscar. Intentá de nuevo.</p>
+              <p className="text-danger">{(error as Error)?.message || 'Error al buscar. Intentá de nuevo.'}</p>
               <Button variant="secondary" onClick={() => refetch()} className="mt-4">
                 Reintentar
               </Button>

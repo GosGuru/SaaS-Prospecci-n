@@ -5,6 +5,7 @@ import type { PlaceSearchResult, PlaceSearchParams } from '@/types'
 
 const GOOGLE_PLACES_API_KEY = process.env.GOOGLE_PLACES_API_KEY
 const DEMO_MODE = process.env.DEMO_MODE === 'true'
+const FALLBACK_TO_DEMO_ON_PROVIDER_ERROR = process.env.PLACES_FALLBACK_TO_DEMO_ON_ERROR !== 'false'
 
 // Demo data for testing without API key
 const DEMO_RESULTS: PlaceSearchResult[] = [
@@ -181,6 +182,47 @@ const FIELD_MASK = [
   'places.photos',
 ].join(',')
 
+function filterDemoResults(
+  query: string,
+  minRating?: number,
+  hasWebsite?: boolean | null
+): PlaceSearchResult[] {
+  let results = [...DEMO_RESULTS]
+
+  const lowerQuery = query.toLowerCase()
+  results = results.filter(
+    (r) =>
+      r.name.toLowerCase().includes(lowerQuery) ||
+      r.category.toLowerCase().includes(lowerQuery) ||
+      r.types.some((t) => t.includes(lowerQuery))
+  )
+
+  if (minRating) {
+    results = results.filter((r) => (r.rating || 0) >= minRating)
+  }
+
+  if (hasWebsite !== undefined && hasWebsite !== null) {
+    results = results.filter((r) => r.hasWebsite === hasWebsite)
+  }
+
+  if (results.length === 0) {
+    results = DEMO_RESULTS
+  }
+
+  return results
+}
+
+async function parseJsonSafely(response: Response): Promise<any> {
+  const text = await response.text()
+  if (!text) return null
+
+  try {
+    return JSON.parse(text)
+  } catch {
+    return { raw: text }
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const session = await auth()
@@ -201,33 +243,7 @@ export async function POST(req: NextRequest) {
 
     // Demo mode - return mock data
     if (DEMO_MODE || !GOOGLE_PLACES_API_KEY) {
-      let results = [...DEMO_RESULTS]
-
-      // Filter by query
-      if (query) {
-        const lowerQuery = query.toLowerCase()
-        results = results.filter(
-          (r) =>
-            r.name.toLowerCase().includes(lowerQuery) ||
-            r.category.toLowerCase().includes(lowerQuery) ||
-            r.types.some((t) => t.includes(lowerQuery))
-        )
-      }
-
-      // Filter by rating
-      if (minRating) {
-        results = results.filter((r) => (r.rating || 0) >= minRating)
-      }
-
-      // Filter by website
-      if (hasWebsite !== undefined && hasWebsite !== null) {
-        results = results.filter((r) => r.hasWebsite === hasWebsite)
-      }
-
-      // If no matches, return all demo data
-      if (results.length === 0) {
-        results = DEMO_RESULTS
-      }
+      const results = filterDemoResults(query, minRating, hasWebsite)
 
       return NextResponse.json({
         results,
@@ -267,13 +283,35 @@ export async function POST(req: NextRequest) {
         body: JSON.stringify(requestBody),
       })
 
-      const data = await response.json()
+      const data = await parseJsonSafely(response)
 
-      if (data.error) {
-        console.error('Google Places API v2 error:', data.error)
+      if (!response.ok || data?.error) {
+        const providerError = data?.error
+        const details =
+          providerError?.message ||
+          data?.message ||
+          `Google Places respondió ${response.status}`
+
+        console.error('Google Places API v2 error:', {
+          status: response.status,
+          details,
+          payload: data,
+        })
+
+        if (FALLBACK_TO_DEMO_ON_PROVIDER_ERROR) {
+          const results = filterDemoResults(query, minRating, hasWebsite)
+
+          return NextResponse.json({
+            results,
+            total: results.length,
+            isDemo: true,
+            warning: `Google Places no disponible: ${details}`,
+          })
+        }
+
         return NextResponse.json(
-          { error: 'Error searching places', details: data.error.message },
-          { status: 500 }
+          { error: 'Error searching places', details },
+          { status: 502 }
         )
       }
 
