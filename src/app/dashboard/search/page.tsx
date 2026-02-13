@@ -172,7 +172,6 @@ export default function SearchPage() {
 
   const results = searchResults?.results || []
   const isDemo = searchResults?.isDemo
-  const searchWarning = (searchResults as { warning?: string } | undefined)?.warning
 
   return (
     <div className="space-y-6">
@@ -359,17 +358,6 @@ export default function SearchPage() {
           </div>
         )}
       </Card>
-
-      {searchWarning && (
-        <Card className="p-4 border-warning/40 bg-warning/10">
-          <div className="flex items-start gap-3">
-            <Info className="w-5 h-5 text-warning mt-0.5" />
-            <p className="text-sm text-warning">
-              {searchWarning}. Mostrando resultados demo temporalmente.
-            </p>
-          </div>
-        </Card>
-      )}
 
       {/* Results section */}
       {searchQuery && (
